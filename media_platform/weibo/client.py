@@ -411,3 +411,47 @@ class WeiboClient(ProxyRefreshMixin):
             crawler_total_count += 10
             notes_has_more = notes_res.get("cardlistInfo", {}).get("total", 0) > crawler_total_count
         return result
+
+    async def get_current_user_info(self) -> Dict:
+        """Get current logged-in user info from mobile config API."""
+        uri = "/api/config"
+        return await self.request(method="GET", url=f"{self._host}{uri}", headers=self.headers)
+
+    async def get_self_feed(
+        self,
+        feed_type: str,
+        page: int = 1,
+        uid: str = "",
+    ) -> Dict:
+        """
+        Try fetching current-account favorite/liked feed.
+        These endpoints are private and may change frequently, so this method
+        iterates through configured candidates until one returns data.
+        """
+        if feed_type == "favorite":
+            candidates = config.WEIBO_FAVORITE_API_CANDIDATES
+        elif feed_type == "liked":
+            candidates = config.WEIBO_LIKED_API_CANDIDATES
+        else:
+            raise DataFetchError(f"unsupported self feed type: {feed_type}")
+
+        last_error: Optional[Exception] = None
+        for candidate in candidates:
+            final_candidate = candidate.format(uid=uid)
+            if "?" in final_candidate:
+                uri, query_string = final_candidate.split("?", 1)
+                params = dict(parse_qs(query_string))
+                params = {k: (v[0] if isinstance(v, list) and v else v) for k, v in params.items()}
+                params["page"] = page
+            else:
+                uri = final_candidate
+                params = {"page": page}
+            try:
+                return await self.get(uri, params=params)
+            except Exception as exc:
+                last_error = exc
+                utils.logger.warning(
+                    f"[WeiboClient.get_self_feed] candidate failed, feed_type={feed_type}, candidate={final_candidate}, error={exc}"
+                )
+
+        raise DataFetchError(f"get {feed_type} feed failed: {last_error}")

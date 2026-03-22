@@ -35,6 +35,21 @@ WEIBO_CREATOR_ID_LIST = [
     # ........................
 ]
 
+# Maximum number of favorite/liked posts to export for the current account.
+WEIBO_FAVORITE_MAX_COUNT = 50
+WEIBO_LIKED_MAX_COUNT = 50
+
+# Candidate mobile endpoints for favorite/liked feeds.
+# Weibo frequently changes private API paths, so these are tried in order.
+WEIBO_FAVORITE_API_CANDIDATES = [
+    "/api/container/getIndex?containerid=230283{uid}_-_feed_favorites",
+    "/api/container/getIndex?containerid=231093_-_selffav",
+]
+WEIBO_LIKED_API_CANDIDATES = [
+    "/api/container/getIndex?containerid=230283{uid}_-_feed_like",
+    "/api/container/getIndex?containerid=100103type=like&q=",
+]
+
 # Whether to enable the function of crawling the full text of Weibo. It is enabled by default.
 # If turned on, it will increase the probability of being risk controlled, which is equivalent to a keyword search request that will traverse all posts and request the post details again.
 ENABLE_WEIBO_FULL_TEXT = True

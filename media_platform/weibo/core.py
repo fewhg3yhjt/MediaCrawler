@@ -129,6 +129,10 @@ class WeiboCrawler(AbstractCrawler):
             elif config.CRAWLER_TYPE == "creator":
                 # Get creator's information and their notes and comments
                 await self.get_creators_and_notes()
+            elif config.CRAWLER_TYPE == "favorite":
+                await self.get_self_notes(feed_type="favorite")
+            elif config.CRAWLER_TYPE == "liked":
+                await self.get_self_notes(feed_type="liked")
             else:
                 pass
             utils.logger.info("[WeiboCrawler.start] Weibo Crawler finished ...")
@@ -334,6 +338,47 @@ class WeiboCrawler(AbstractCrawler):
 
             else:
                 utils.logger.error(f"[WeiboCrawler.get_creators_and_notes] get creator info error, creator_id:{user_id}")
+
+    async def get_self_notes(self, feed_type: str) -> None:
+        """
+        Export current account's favorite or liked weibo feed.
+        """
+        utils.logger.info(f"[WeiboCrawler.get_self_notes] Begin export self {feed_type} feed")
+        source_keyword_var.set(feed_type)
+        current_user_info = await self.wb_client.get_current_user_info()
+        uid = str(current_user_info.get("uid", "") or "")
+        max_count = (
+            config.WEIBO_FAVORITE_MAX_COUNT if feed_type == "favorite" else config.WEIBO_LIKED_MAX_COUNT
+        )
+        page = 1
+        exported_count = 0
+        while exported_count < max_count:
+            feed_res = await self.wb_client.get_self_feed(feed_type=feed_type, page=page, uid=uid)
+            cards = feed_res.get("cards") or []
+            note_list = filter_search_result_card(cards)
+            if not note_list:
+                utils.logger.info(f"[WeiboCrawler.get_self_notes] Empty card list for page {page}, stop exporting")
+                break
+
+            note_list = await self.batch_get_notes_full_text(note_list)
+            note_id_list: List[str] = []
+            for note_item in note_list:
+                if not note_item:
+                    continue
+                note_item["source_type"] = feed_type
+                mblog = note_item.get("mblog") or {}
+                note_id = mblog.get("id")
+                if note_id:
+                    note_id_list.append(note_id)
+                await weibo_store.update_weibo_note(note_item)
+                await self.get_note_images(mblog)
+                exported_count += 1
+                if exported_count >= max_count:
+                    break
+
+            await self.batch_get_notes_comments(note_id_list)
+            page += 1
+            await asyncio.sleep(config.CRAWLER_MAX_SLEEP_SEC)
 
     async def create_weibo_client(self, httpx_proxy: Optional[str]) -> WeiboClient:
         """Create xhs client"""

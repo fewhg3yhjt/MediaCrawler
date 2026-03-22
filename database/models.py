@@ -230,6 +230,17 @@ class WeiboNote(Base):
     shared_count = Column(Text, comment='分享数')
     note_url = Column(Text, comment='笔记URL')
     source_keyword = Column(Text, default='', comment='来源关键词')
+    original_url = Column(Text, default='', comment='原始微博URL')
+    raw_text = Column(Text, default='', comment='原始正文HTML')
+    source_type = Column(Text, default='', comment='抓取来源类型')
+    media_type = Column(Text, default='', comment='媒体类型')
+    image_urls = Column(Text, default='', comment='图片URL列表')
+    video_url = Column(Text, default='', comment='视频URL')
+    audio_url = Column(Text, default='', comment='音频URL')
+    pic_ids = Column(Text, default='', comment='图片ID列表')
+    is_retweet = Column(Text, default='0', comment='是否转发')
+    retweeted_note_id = Column(Text, default='', comment='原始转发微博ID')
+    retweeted_original_url = Column(Text, default='', comment='原始转发微博URL')
 
 class WeiboNoteComment(Base):
     __tablename__ = 'weibo_note_comment'
