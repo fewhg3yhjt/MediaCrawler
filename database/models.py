@@ -261,6 +261,10 @@ class WeiboNoteComment(Base):
     comment_like_count = Column(Text, comment='评论点赞数')
     sub_comment_count = Column(Text, comment='子评论数')
     parent_comment_id = Column(String(255), comment='父评论ID')
+    raw_text = Column(Text, default='', comment='原始评论HTML')
+    comment_order = Column(Integer, default=0, comment='抓取顺序')
+    comment_page = Column(Integer, default=0, comment='抓取页码')
+    is_hot_comment = Column(Text, default='0', comment='是否热门评论')
 
 class WeiboCreator(Base):
     __tablename__ = 'weibo_creator'

@@ -25,6 +25,8 @@
 
 import base64
 import json
+import os
+import pathlib
 import random
 import re
 import urllib
@@ -33,7 +35,7 @@ from io import BytesIO
 from typing import Dict, List, Optional, Tuple, cast
 
 import httpx
-from PIL import Image, ImageDraw, ImageShow
+from PIL import Image, ImageDraw
 from playwright.async_api import Cookie, Page
 
 from . import utils
@@ -86,20 +88,25 @@ async def find_qrcode_img_from_canvas(page: Page, canvas_selector: str) -> str:
 
 
 def show_qrcode(qr_code) -> None:  # type: ignore
-    """parse base64 encode qrcode image and show it"""
+    """parse base64 encode qrcode image and save it to a local file (no full-screen popup)"""
     if "," in qr_code:
         qr_code = qr_code.split(",")[1]
     qr_code = base64.b64decode(qr_code)
     image = Image.open(BytesIO(qr_code))
 
-    # Add a square border around the QR code and display it within the border to improve scanning accuracy.
+    # Add a square border around the QR code to improve scanning accuracy.
     width, height = image.size
     new_image = Image.new('RGB', (width + 20, height + 20), color=(255, 255, 255))
     new_image.paste(image, (10, 10))
     draw = ImageDraw.Draw(new_image)
     draw.rectangle((0, 0, width + 19, height + 19), outline=(0, 0, 0), width=1)
-    del ImageShow.UnixViewer.options["save_all"]
-    new_image.show()
+
+    out_dir = pathlib.Path("data")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "login_qrcode.png"
+    new_image.save(out_path)
+    utils.logger.info(f"[show_qrcode] 登录二维码已保存: {os.path.abspath(out_path)}")
+    utils.logger.info(f"[show_qrcode] 请用对应APP扫码登录；若浏览器窗口已打开登录页，可直接在浏览器中扫码")
 
 
 def get_user_agent() -> str:
