@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "source": {
+    "type": "detail",
+    "note_ids": ["4982041758140155"]
+  },
+  "collect": {
+    "images": {
+      "download": true,
+      "include_retweeted": true
+    }
+  },
+  "update": {"default": "missing"},
+  "output": {"collection": "image_pilot"}
+}
