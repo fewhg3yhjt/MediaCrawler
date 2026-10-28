@@ -107,6 +107,8 @@ def decode_mobile_detail(status: int, url: str, body: str, note_id: str) -> dict
 
 def decode_creator_page(status: int, url: str, payload: dict | None) -> dict:
     host = urlsplit(url).hostname or ""
+    if 300 <= status < 400:
+        raise CollectionError("login_required")
     if status == 401 or host not in ("weibo.com", "www.weibo.com"):
         raise CollectionError("login_required")
     if status == 403:
@@ -136,6 +138,8 @@ def decode_creator_page(status: int, url: str, payload: dict | None) -> dict:
 
 def decode_comments_page(status: int, url: str, payload: dict | None) -> dict:
     host = urlsplit(url).hostname or ""
+    if 300 <= status < 400:
+        raise CollectionError("login_required")
     if status == 401 or host not in ("m.weibo.cn", "www.weibo.cn"):
         raise CollectionError("login_required")
     if status == 403:
