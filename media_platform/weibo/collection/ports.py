@@ -25,7 +25,7 @@ from pydantic import BaseModel
 
 from .models import (
     CollectionResult, DownloadedAsset, DownloadedFile, MediaAsset, ImageManifest, MediaManifest,
-    ImageOptions, TextOptions, MediaOptions, PostRef, PostText,
+    ImageOptions, TextOptions, MediaOptions, CommentsOptions, PostRef, PostText, CommentBatch,
     ProgressEvent,
 )
 
@@ -36,6 +36,10 @@ class PostSource(Protocol):
 
 class CreatorTimelineClient(Protocol):
     async def get_creator_notes_page(self, creator_id: str, page: int) -> dict: ...
+
+
+class CommentPageClient(Protocol):
+    async def get_note_comments_page(self, note_id: str, max_id: int, max_id_type: int) -> dict: ...
 
 
 class ProgressObserver(Protocol):
@@ -52,6 +56,10 @@ class TextResolver(Protocol):
 
 class MediaResolver(Protocol):
     async def resolve(self, post: PostRef, options: MediaOptions) -> MediaManifest: ...
+
+
+class CommentsResolver(Protocol):
+    async def resolve(self, post: PostRef, options: CommentsOptions) -> CommentBatch: ...
 
 
 class LongTextSource(Protocol):

@@ -185,6 +185,7 @@ class ImageJobController:
         texts = []
         video = []
         audio = []
+        comments = []
         for result in (job.report or {}).get("results", []):
             if result["capability"] == "images":
                 for item in result.get("assets", []):
@@ -200,10 +201,17 @@ class ImageJobController:
                     media.append({"status": item["status"], "error_code": item.get("error_code"),
                                   "downloaded": bool(item.get("local_path")),
                                   "url": item["asset"]["url"], "kind": result["capability"]})
+            elif result["capability"] == "comments" and result.get("comment_batch") is not None:
+                batch = result["comment_batch"]
+                comments.append({"note_id": result["note_id"], "status": result["status"],
+                                 "error_code": result.get("error_code"), "pages": batch["pages"],
+                                 "complete": batch["complete"], "stop_reason": batch["stop_reason"],
+                                 "items": batch["items"]})
         return {"id": job.id, "url": job.source_url, "phase": job.phase,
                 "completed": job.completed, "total": job.total, "error_code": job.error_code,
                 "attempts": job.attempts, "images": images, "texts": texts,
                 "video": video, "audio": audio,
+                "comments": comments,
                 "discovered": (job.report or {}).get("discovered"),
                 "stop_reason": (job.report or {}).get("stop_reason"),
                 "capabilities": list(job.request.get("collect", {})),

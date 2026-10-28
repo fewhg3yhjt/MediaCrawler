@@ -38,6 +38,7 @@ from media_platform.weibo.collection.images import ImageCollector
 from media_platform.weibo.collection.text import TextCollector, WeiboTextResolver
 from media_platform.weibo.collection.media import MediaCollector, WeiboMediaResolver
 from media_platform.weibo.collection.application import CollectionApplication, PostSourceFactory
+from media_platform.weibo.collection.comments import CommentsCollector, WeiboHotCommentsResolver
 from media_platform.weibo.collection.models import AudioOptions, CrawlRequest, TaskExecutionError, VideoOptions
 from media_platform.weibo.collection.repository import FileAssetRepository, SqliteTaskRepository
 from media_platform.weibo.collection.service import CollectionPlanner, TaskRunner, validate_capabilities
@@ -59,6 +60,7 @@ async def execute(args):
         TextCollector.name: TextCollector.options_type,
         "video": VideoOptions,
         "audio": AudioOptions,
+        CommentsCollector.name: CommentsCollector.options_type,
     }
     validate_capabilities(request, supported)
     cookies = args.cookie_file.read_text(encoding="utf-8").strip() if args.cookie_file else ""
@@ -92,11 +94,12 @@ async def execute(args):
                                      args.workspace / "audio", 100 * 1024 * 1024),
             FileAssetRepository(args.workspace / "audio"), args.account_scope, AudioOptions,
         )
+        comments = CommentsCollector(WeiboHotCommentsResolver(client, gate))
         # Registration is the only capability support table. Repositories are
         # lazy, so planning still precedes any output files or network requests.
         repository = SqliteTaskRepository(args.workspace / "tasks.sqlite3")
         application = CollectionApplication(
-            CollectionPlanner((images, text, video, audio)), TaskRunner(repository, args.account_scope),
+            CollectionPlanner((images, text, video, audio, comments)), TaskRunner(repository, args.account_scope),
             PostSourceFactory(args.archive_dir, client, gate), ImageReportWriter(args.workspace / "reports"),
         )
         report = await application.execute(request, args.resume_task)

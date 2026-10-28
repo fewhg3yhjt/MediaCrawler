@@ -28,6 +28,7 @@ from .adapters import (
     StreamingAssetDownloader, ValidatedAssetDownloader, VideoFileValidator, WeiboImageResolver,
 )
 from .application import CollectionApplication, PostSourceFactory
+from .comments import CommentsCollector, WeiboHotCommentsResolver
 from .images import ImageCollector
 from .login import QrLoginFlow
 from .media import MediaCollector, WeiboMediaResolver
@@ -56,6 +57,7 @@ class WebImageExecutor:
             TextCollector.name: TextCollector.options_type,
             "video": VideoOptions,
             "audio": AudioOptions,
+            CommentsCollector.name: CommentsCollector.options_type,
         })
         scope = self.account_scope if job.use_browser else "public"
         if job.scope != scope:
@@ -95,8 +97,9 @@ class WebImageExecutor:
                                          self.workspace / "audio", 100 * 1024 * 1024),
                 FileAssetRepository(self.workspace / "audio"), scope, AudioOptions, progress,
             )
+            comments = CommentsCollector(WeiboHotCommentsResolver(client, gate, observer=progress), progress)
             application = CollectionApplication(
-                CollectionPlanner((collector, text, video, audio)),
+                CollectionPlanner((collector, text, video, audio, comments)),
                 TaskRunner(SqliteTaskRepository(self.workspace / "tasks.sqlite3"), scope, progress),
                 PostSourceFactory(self.workspace / "jsonl", client, gate),
                 ImageReportWriter(self.workspace / "reports"),

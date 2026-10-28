@@ -52,6 +52,10 @@ class AudioOptions(MediaOptions):
     pass
 
 
+class CommentsOptions(Contract):
+    max_count: int = Field(default=100, gt=0, le=500, strict=True)
+
+
 class DetailSpec(Contract):
     type: Literal["detail"]
     note_ids: tuple[str, ...] = Field(min_length=1)
@@ -154,6 +158,25 @@ class PostText:
 
 
 @dataclass(frozen=True)
+class CommentRecord:
+    comment_id: str
+    user_id: str
+    user_name: str
+    text: str
+    created_at: str
+    like_count: int
+    rank: int
+
+
+@dataclass(frozen=True)
+class CommentBatch:
+    items: tuple[CommentRecord, ...]
+    pages: int
+    complete: bool
+    stop_reason: Literal["end", "limit_reached"]
+
+
+@dataclass(frozen=True)
 class AssetResult:
     asset: MediaAsset
     status: Literal["succeeded", "failed"]
@@ -167,6 +190,7 @@ class CollectionResult:
     assets: tuple[AssetResult, ...] = ()
     error_code: str | None = None
     content: PostText | None = None
+    comment_batch: CommentBatch | None = None
 
 
 @dataclass(frozen=True)

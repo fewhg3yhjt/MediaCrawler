@@ -134,6 +134,32 @@ def decode_creator_page(status: int, url: str, payload: dict | None) -> dict:
     return result
 
 
+def decode_comments_page(status: int, url: str, payload: dict | None) -> dict:
+    host = urlsplit(url).hostname or ""
+    if status == 401 or host not in ("m.weibo.cn", "www.weibo.cn"):
+        raise CollectionError("login_required")
+    if status == 403:
+        raise CollectionError("access_restricted")
+    if status != 200:
+        raise CollectionError("comments_request_failed")
+    if not isinstance(payload, dict):
+        raise CollectionError("login_required")
+    if payload.get("ok") != 1:
+        message = str(payload.get("msg") or payload.get("message") or "").lower()
+        if any(token in message for token in ("login", "登录", "passport", "cookie")):
+            raise CollectionError("login_required")
+        raise CollectionError("access_restricted")
+    data = payload.get("data")
+    if not isinstance(data, dict) or not isinstance(data.get("data"), list) or "max_id" not in data:
+        raise CollectionError("invalid_comments_page")
+    try:
+        max_id = int(data["max_id"])
+        max_id_type = int(data.get("max_id_type", 0))
+    except (TypeError, ValueError) as exc:
+        raise CollectionError("invalid_comments_page") from exc
+    return {"items": data["data"], "max_id": max_id, "max_id_type": max_id_type}
+
+
 class HttpWeiboDetailClient:
     def __init__(self, client: httpx.AsyncClient):
         self.client = client
@@ -177,6 +203,23 @@ class HttpWeiboDetailClient:
         except ValueError:
             payload = None
         return decode_creator_page(response.status_code, str(response.url), payload)
+
+    async def get_note_comments_page(self, note_id: str, max_id: int, max_id_type: int) -> dict:
+        params = {"id": note_id, "mid": note_id, "max_id_type": max_id_type}
+        if max_id > 0:
+            params["max_id"] = max_id
+        try:
+            response = await self.client.get(
+                "https://m.weibo.cn/comments/hotflow", params=params,
+                headers={"Referer": f"https://m.weibo.cn/detail/{note_id}"}, follow_redirects=False,
+            )
+        except httpx.HTTPError as exc:
+            raise CollectionError("comments_request_failed") from exc
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = None
+        return decode_comments_page(response.status_code, str(response.url), payload)
 
 
 class BrowserProfileSession:
@@ -262,3 +305,21 @@ class BrowserWeiboDetailClient:
         except ValueError:
             payload = None
         return decode_creator_page(response.status, response.url, payload)
+
+    async def get_note_comments_page(self, note_id: str, max_id: int, max_id_type: int) -> dict:
+        params = {"id": note_id, "mid": note_id, "max_id_type": max_id_type}
+        if max_id > 0:
+            params["max_id"] = max_id
+        try:
+            response = await self.request.get(
+                "https://m.weibo.cn/comments/hotflow", params=params,
+                headers={"Referer": f"https://m.weibo.cn/detail/{note_id}"},
+                timeout=30000, max_redirects=0,
+            )
+        except Exception as exc:
+            raise CollectionError("comments_request_failed") from exc
+        try:
+            payload = await response.json()
+        except ValueError:
+            payload = None
+        return decode_comments_page(response.status, response.url, payload)

@@ -91,6 +91,21 @@ class CachedDetailClient:
                 raise
         return self._responses[key]
 
+    async def get_note_comments_page(self, note_id: str, max_id: int, max_id_type: int) -> dict:
+        method = getattr(self.client, "get_note_comments_page", None)
+        if method is None:
+            raise CollectionError("comments_request_failed")
+        key = f"comments:{note_id}:{max_id}:{max_id_type}"
+        if key in self._failures:
+            raise self._failures[key]
+        if key not in self._responses:
+            try:
+                self._responses[key] = await method(note_id, max_id, max_id_type)
+            except Exception as exc:
+                self._failures[key] = exc
+                raise
+        return self._responses[key]
+
 
 class RequestGate:
     """One rate limit shared by detail and file requests in this process."""
