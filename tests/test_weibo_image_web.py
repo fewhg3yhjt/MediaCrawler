@@ -73,6 +73,17 @@ class Executor:
             progress(ProgressEvent("text", completed=1, total=1))
             results.append({"note_id": "123", "capability": "text", "status": "succeeded",
                             "error_code": None, "content": asdict(PostText("123", "sample body", "sample body", True))})
+        for kind, content, extension in (("video", b"\x00\x00\x00\x18ftypmp42video", "mp4"),
+                                         ("audio", b"ID3sample-audio", "mp3")):
+            if kind in job.request["collect"]:
+                media_asset = MediaAsset(kind, "123", "123", f"https://f.video.weibocdn.com/{kind}.{extension}", kind)
+                path = FileAssetRepository(self.workspace / kind).save(
+                    "test", media_asset, DownloadedAsset(content, extension),
+                )
+                progress(ProgressEvent("media", capability=kind, completed=1, total=1))
+                results.append({"note_id": "123", "capability": kind, "status": "succeeded", "assets": [
+                    {"asset": asdict(media_asset), "status": "succeeded", "local_path": str(path), "error_code": None}
+                ]})
         return {"task_id": task_id, "status": "succeeded", "results": results}
 
 
@@ -129,6 +140,10 @@ def test_invalid_inputs_and_missing_token_never_start_work(tmp_path):
             assert (await client.post("/api/jobs", json={"url": "123"})).status_code == 403
             assert (await client.post("/api/jobs", headers=headers, json={"url": "https://evil.test/123"})).status_code == 422
             assert (await client.post("/api/jobs", headers=headers, json={"url": "123", "download": "false"})).status_code == 422
+            assert (await client.post("/api/jobs", headers=headers, json={
+                "url": "123", "include_images": False, "include_text": False,
+                "include_video": False, "include_audio": False,
+            })).status_code == 422
             assert (await client.get("/api/jobs/missing")).status_code == 404
             assert not controller.repository.list() and not executor.calls
     asyncio.run(execute())
@@ -166,6 +181,28 @@ def test_text_only_job_selects_only_text_and_returns_body(tmp_path):
             assert not (tmp_path / "images").exists()
             assert executor.calls == [(False, False, None)]
 
+    asyncio.run(execute())
+
+
+def test_video_and_audio_jobs_stream_to_file_endpoints_and_media_archive(tmp_path):
+    async def execute():
+        async with environment(tmp_path) as (client, controller, _, headers):
+            response = await client.post("/api/jobs", headers=headers, json={
+                "url": "123", "include_images": False, "include_video": True, "include_audio": True,
+            })
+            assert response.status_code == 202
+            job_id = response.json()["id"]
+            await wait(controller)
+            state = controller.snapshot(job_id)
+            assert state["capabilities"] == ["video", "audio"]
+            assert state["video"][0]["downloaded"] and state["audio"][0]["downloaded"]
+            assert (await client.get(f"/api/jobs/{job_id}/media/video/0")).content == b"\x00\x00\x00\x18ftypmp42video"
+            assert (await client.get(f"/api/jobs/{job_id}/media/audio/0")).content == b"ID3sample-audio"
+            packed = await client.get(f"/api/jobs/{job_id}/archive")
+            with zipfile.ZipFile(io.BytesIO(packed.content)) as archive:
+                manifest = json.loads(archive.read("manifest.json"))
+                assert {item["capability"] for item in manifest} == {"video", "audio"}
+                assert archive.testzip() is None
     asyncio.run(execute())
 
 

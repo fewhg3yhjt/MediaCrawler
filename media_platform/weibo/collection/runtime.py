@@ -23,11 +23,15 @@ from pathlib import Path
 
 import httpx
 
-from .adapters import CachedDetailClient, HttpBinaryTransport, ImageValidator, RequestGate, ValidatedAssetDownloader, WeiboImageResolver
+from .adapters import (
+    AudioFileValidator, CachedDetailClient, HttpBinaryTransport, ImageValidator, RequestGate,
+    StreamingAssetDownloader, ValidatedAssetDownloader, VideoFileValidator, WeiboImageResolver,
+)
 from .application import CollectionApplication, PostSourceFactory
 from .images import ImageCollector
 from .login import QrLoginFlow
-from .models import CrawlRequest
+from .media import MediaCollector, WeiboMediaResolver
+from .models import AudioOptions, CrawlRequest, VideoOptions
 from .presentation import ImageReportWriter
 from .repository import FileAssetRepository, SqliteTaskRepository
 from .service import CollectionPlanner, TaskRunner, validate_capabilities
@@ -50,6 +54,8 @@ class WebImageExecutor:
         validate_capabilities(request, {
             ImageCollector.name: ImageCollector.options_type,
             TextCollector.name: TextCollector.options_type,
+            "video": VideoOptions,
+            "audio": AudioOptions,
         })
         scope = self.account_scope if job.use_browser else "public"
         if job.scope != scope:
@@ -73,8 +79,20 @@ class WebImageExecutor:
                 FileAssetRepository(self.workspace / "images"), scope, progress,
             )
             text = TextCollector(WeiboTextResolver(client, gate, client), progress)
+            video = MediaCollector(
+                "video", WeiboMediaResolver(client, gate, "video"),
+                StreamingAssetDownloader(HttpBinaryTransport(media_http, gate), VideoFileValidator(),
+                                         self.workspace / "video", 1024 * 1024 * 1024),
+                FileAssetRepository(self.workspace / "video"), scope, VideoOptions, progress,
+            )
+            audio = MediaCollector(
+                "audio", WeiboMediaResolver(client, gate, "audio"),
+                StreamingAssetDownloader(HttpBinaryTransport(media_http, gate), AudioFileValidator(),
+                                         self.workspace / "audio", 100 * 1024 * 1024),
+                FileAssetRepository(self.workspace / "audio"), scope, AudioOptions, progress,
+            )
             application = CollectionApplication(
-                CollectionPlanner((collector, text)),
+                CollectionPlanner((collector, text, video, audio)),
                 TaskRunner(SqliteTaskRepository(self.workspace / "tasks.sqlite3"), scope, progress),
                 PostSourceFactory(self.workspace / "jsonl"), ImageReportWriter(self.workspace / "reports"),
             )

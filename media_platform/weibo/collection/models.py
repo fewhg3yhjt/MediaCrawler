@@ -20,6 +20,7 @@
 
 from dataclasses import dataclass
 from typing import Annotated, Literal
+from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 
@@ -36,6 +37,19 @@ class ImageOptions(Contract):
 
 class TextOptions(Contract):
     require_full_text: StrictBool = True
+
+
+class MediaOptions(Contract):
+    download: StrictBool = True
+    include_retweeted: StrictBool = False
+
+
+class VideoOptions(MediaOptions):
+    pass
+
+
+class AudioOptions(MediaOptions):
+    pass
 
 
 class DetailSpec(Contract):
@@ -103,6 +117,16 @@ class ImageManifest:
 
 
 @dataclass(frozen=True)
+class MediaManifest:
+    assets: tuple[MediaAsset, ...]
+    originals_complete: bool
+    retweeted_complete: bool
+
+    def satisfies(self, options: MediaOptions) -> bool:
+        return self.originals_complete and (not options.include_retweeted or self.retweeted_complete)
+
+
+@dataclass(frozen=True)
 class PostRef:
     note_id: str
     images: ImageManifest | None = None
@@ -137,6 +161,12 @@ class CollectionResult:
 @dataclass(frozen=True)
 class DownloadedAsset:
     content: bytes
+    extension: str
+
+
+@dataclass(frozen=True)
+class DownloadedFile:
+    path: Path
     extension: str
 
 

@@ -40,6 +40,8 @@ class SubmitImageJob(Contract):
     download: StrictBool = True
     include_images: StrictBool = True
     include_text: StrictBool = False
+    include_video: StrictBool = False
+    include_audio: StrictBool = False
     include_retweeted: StrictBool = False
     use_browser_session: StrictBool = False
 
@@ -51,7 +53,7 @@ class SubmitImageJob(Contract):
 
     @model_validator(mode="after")
     def at_least_one_capability(self):
-        if not (self.include_images or self.include_text):
+        if not (self.include_images or self.include_text or self.include_video or self.include_audio):
             raise ValueError("select_at_least_one_capability")
         return self
 
@@ -112,6 +114,10 @@ def create_image_app(controller: ImageJobController, workspace: Path) -> FastAPI
             collect["images"] = {"download": body.download, "include_retweeted": body.include_retweeted}
         if body.include_text:
             collect["text"] = {}
+        if body.include_video:
+            collect["video"] = {"include_retweeted": body.include_retweeted}
+        if body.include_audio:
+            collect["audio"] = {"include_retweeted": body.include_retweeted}
         request = CrawlRequest.model_validate({
             "source": {"type": "detail", "note_ids": [body.url]},
             "collect": collect,
@@ -141,37 +147,57 @@ def create_image_app(controller: ImageJobController, workspace: Path) -> FastAPI
             raise HTTPException(404, "qr_not_available")
         return Response(value[1], media_type="image/png")
 
-    def assets(job_id: str):
+    def assets(job_id: str, kind: str):
         job = controller.repository.get(job_id)
+        capability = {"images": "images", "video": "video", "audio": "audio"}.get(kind)
+        if capability is None:
+            raise HTTPException(404, "media_kind_not_found")
         return [a for r in (job.report or {}).get("results", [])
-                if r["capability"] == "images" for a in r.get("assets", [])]
+                if r["capability"] == capability for a in r.get("assets", [])]
 
-    def checked_path(item):
+    def checked_path(item, kind: str):
         if item.get("status") != "succeeded" or not item.get("local_path"):
-            raise HTTPException(404, "image_not_downloaded")
+            raise HTTPException(404, "media_not_downloaded")
         path = Path(item["local_path"]).resolve()
-        if not path.is_relative_to(workspace / "images") or not path.is_file():
-            raise HTTPException(404, "image_file_missing")
+        root = (workspace / kind).resolve()
+        if not path.is_relative_to(root) or not path.is_file():
+            raise HTTPException(404, "media_file_missing")
         return path
 
     @app.get("/api/jobs/{job_id}/images/{index}")
     async def image(job_id: str, index: int, download: bool = False):
-        items = assets(job_id)
+        items = assets(job_id, "images")
         if index < 0 or index >= len(items):
             raise HTTPException(404, "image_not_found")
-        path = checked_path(items[index])
+        path = checked_path(items[index], "images")
         return FileResponse(path, media_type=mimetypes.guess_type(path.name)[0],
                             filename=f"weibo-{index + 1}{path.suffix}" if download else None)
+
+    @app.get("/api/jobs/{job_id}/media/{kind}/{index}")
+    async def media(job_id: str, kind: str, index: int, download: bool = False):
+        if kind not in ("video", "audio"):
+            raise HTTPException(404, "media_kind_not_found")
+        items = assets(job_id, kind)
+        if index < 0 or index >= len(items):
+            raise HTTPException(404, "media_not_found")
+        path = checked_path(items[index], kind)
+        return FileResponse(path, media_type=mimetypes.guess_type(path.name)[0],
+                            filename=f"weibo-{kind}-{index + 1}{path.suffix}" if download else None)
 
     @app.get("/api/jobs/{job_id}/archive")
     async def archive(job_id: str):
         job = controller.repository.get(job_id)
-        downloaded = [a for a in assets(job_id) if a.get("local_path") and a["status"] == "succeeded"]
+        downloaded = [
+            item for kind in ("images", "video", "audio") for item in assets(job_id, kind)
+            if item.get("local_path") and item["status"] == "succeeded"
+        ]
         if not downloaded:
-            raise HTTPException(409, "no_downloaded_images")
-        for item in downloaded:
-            checked_path(item)
+            raise HTTPException(409, "no_downloaded_media")
+        for kind in ("images", "video", "audio"):
+            for item in assets(job_id, kind):
+                if item.get("local_path") and item["status"] == "succeeded":
+                    checked_path(item, kind)
         path = await asyncio.to_thread(ImageArchiveWriter(workspace / "exports").write, job.report)
-        return FileResponse(path, media_type="application/zip", filename=f"weibo-{job_id[:8]}-images.zip")
+        return FileResponse(path, media_type="application/zip", filename=f"weibo-{job_id[:8]}-media.zip")
 
     return app

@@ -24,8 +24,8 @@ from typing import AsyncIterator, Protocol
 from pydantic import BaseModel
 
 from .models import (
-    CollectionResult, DownloadedAsset, MediaAsset, ImageManifest,
-    ImageOptions, TextOptions, PostRef, PostText,
+    CollectionResult, DownloadedAsset, DownloadedFile, MediaAsset, ImageManifest, MediaManifest,
+    ImageOptions, TextOptions, MediaOptions, PostRef, PostText,
     ProgressEvent,
 )
 
@@ -46,25 +46,37 @@ class TextResolver(Protocol):
     async def resolve(self, post: PostRef, options: TextOptions) -> PostText: ...
 
 
+class MediaResolver(Protocol):
+    async def resolve(self, post: PostRef, options: MediaOptions) -> MediaManifest: ...
+
+
 class LongTextSource(Protocol):
     async def get_full_text_by_id(self, note_id: str) -> dict: ...
 
 
 class AssetDownloader(Protocol):
-    async def download(self, asset: MediaAsset) -> DownloadedAsset: ...
+    async def download(self, asset: MediaAsset) -> DownloadedAsset | DownloadedFile: ...
 
 
 class BinaryTransport(Protocol):
     async def fetch(self, url: str) -> bytes: ...
 
 
+class StreamingBinaryTransport(Protocol):
+    async def fetch_to_file(self, url: str, path: Path, max_bytes: int) -> int: ...
+
+
 class AssetValidator(Protocol):
     def validate(self, content: bytes) -> DownloadedAsset: ...
 
 
+class FileAssetValidator(Protocol):
+    def validate_file(self, path: Path) -> str: ...
+
+
 class AssetRepository(Protocol):
     def find(self, scope: str, asset: MediaAsset) -> Path | None: ...
-    def save(self, scope: str, asset: MediaAsset, data: DownloadedAsset) -> Path: ...
+    def save(self, scope: str, asset: MediaAsset, data: DownloadedAsset | DownloadedFile) -> Path: ...
 
 
 class Collector(Protocol):

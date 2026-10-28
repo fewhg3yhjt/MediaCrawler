@@ -30,7 +30,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from .models import (
-    CollectionError, CollectionResult, DownloadedAsset, MediaAsset, ImageManifest, PostRef, PostText,
+    CollectionError, CollectionResult, DownloadedAsset, DownloadedFile, MediaAsset, ImageManifest, PostRef, PostText,
 )
 
 
@@ -178,30 +178,55 @@ class FileAssetRepository:
             path = self.root / row[0]
             if path.parent != self.root or not path.is_file():
                 return None
-            return path if hashlib.sha256(path.read_bytes()).hexdigest() == row[1] else None
+            return path if self._checksum(path) == row[1] else None
         except OSError as exc:
             raise CollectionError("asset_read_failed") from exc
 
-    def save(self, scope: str, asset: MediaAsset, data: DownloadedAsset) -> Path:
-        if re.fullmatch(r"[a-z0-9]{1,10}", data.extension) is None or not data.content:
+    @staticmethod
+    def _checksum(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    def save(self, scope: str, asset: MediaAsset, data: DownloadedAsset | DownloadedFile) -> Path:
+        if re.fullmatch(r"[a-z0-9]{1,10}", data.extension) is None:
+            if isinstance(data, DownloadedFile) and data.path.resolve().is_relative_to(self.root):
+                data.path.unlink(missing_ok=True)
             raise CollectionError("invalid_asset_data")
-        checksum = hashlib.sha256(data.content).hexdigest()
+        source = data.path.resolve() if isinstance(data, DownloadedFile) else None
+        if source is not None:
+            if not source.is_relative_to(self.root) or not source.is_file():
+                raise CollectionError("invalid_asset_data")
+            checksum = self._checksum(source)
+        else:
+            if not data.content:
+                raise CollectionError("invalid_asset_data")
+            checksum = hashlib.sha256(data.content).hexdigest()
         target = self.root / f"{checksum}.{data.extension}"
         temporary = None
         try:
             self.root.mkdir(parents=True, exist_ok=True)
-            with tempfile.NamedTemporaryFile(dir=self.root, delete=False) as stream:
-                temporary = stream.name
-                stream.write(data.content)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, target)
+            if source is None:
+                with tempfile.NamedTemporaryFile(dir=self.root, delete=False) as stream:
+                    temporary = stream.name
+                    stream.write(data.content)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.replace(temporary, target)
+            elif source != target:
+                os.replace(source, target)
             with self._connect() as db:
                 db.execute("INSERT OR REPLACE INTO assets VALUES(?,?,?,?,?,?)",
                            (scope, asset.owner_post_id, asset.asset_id, asset.kind, target.name, checksum))
+        except CollectionError:
+            raise
         except OSError as exc:
             raise CollectionError("asset_write_failed") from exc
         finally:
             if temporary is not None:
                 Path(temporary).unlink(missing_ok=True)
+            if source is not None and source != target:
+                source.unlink(missing_ok=True)
         return target

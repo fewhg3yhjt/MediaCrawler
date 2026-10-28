@@ -31,12 +31,14 @@ sys.path.insert(0, str(ROOT))
 import httpx
 
 from media_platform.weibo.collection.adapters import (
-    CachedDetailClient, HttpBinaryTransport, ImageValidator, RequestGate, ValidatedAssetDownloader, WeiboImageResolver,
+    AudioFileValidator, CachedDetailClient, HttpBinaryTransport, ImageValidator, RequestGate,
+    StreamingAssetDownloader, ValidatedAssetDownloader, VideoFileValidator, WeiboImageResolver,
 )
 from media_platform.weibo.collection.images import ImageCollector
 from media_platform.weibo.collection.text import TextCollector, WeiboTextResolver
+from media_platform.weibo.collection.media import MediaCollector, WeiboMediaResolver
 from media_platform.weibo.collection.application import CollectionApplication, PostSourceFactory
-from media_platform.weibo.collection.models import CrawlRequest, TaskExecutionError
+from media_platform.weibo.collection.models import AudioOptions, CrawlRequest, TaskExecutionError, VideoOptions
 from media_platform.weibo.collection.repository import FileAssetRepository, SqliteTaskRepository
 from media_platform.weibo.collection.service import CollectionPlanner, TaskRunner, validate_capabilities
 from media_platform.weibo.collection.presentation import ImageReportWriter
@@ -55,6 +57,8 @@ async def execute(args):
     supported = {
         ImageCollector.name: ImageCollector.options_type,
         TextCollector.name: TextCollector.options_type,
+        "video": VideoOptions,
+        "audio": AudioOptions,
     }
     validate_capabilities(request, supported)
     cookies = args.cookie_file.read_text(encoding="utf-8").strip() if args.cookie_file else ""
@@ -76,11 +80,23 @@ async def execute(args):
             FileAssetRepository(args.workspace / "images"), args.account_scope,
         )
         text = TextCollector(WeiboTextResolver(client, gate, client))
+        video = MediaCollector(
+            "video", WeiboMediaResolver(client, gate, "video"),
+            StreamingAssetDownloader(HttpBinaryTransport(http, gate), VideoFileValidator(),
+                                     args.workspace / "video", 1024 * 1024 * 1024),
+            FileAssetRepository(args.workspace / "video"), args.account_scope, VideoOptions,
+        )
+        audio = MediaCollector(
+            "audio", WeiboMediaResolver(client, gate, "audio"),
+            StreamingAssetDownloader(HttpBinaryTransport(http, gate), AudioFileValidator(),
+                                     args.workspace / "audio", 100 * 1024 * 1024),
+            FileAssetRepository(args.workspace / "audio"), args.account_scope, AudioOptions,
+        )
         # Registration is the only capability support table. Repositories are
         # lazy, so planning still precedes any output files or network requests.
         repository = SqliteTaskRepository(args.workspace / "tasks.sqlite3")
         application = CollectionApplication(
-            CollectionPlanner((images, text)), TaskRunner(repository, args.account_scope),
+            CollectionPlanner((images, text, video, audio)), TaskRunner(repository, args.account_scope),
             PostSourceFactory(args.archive_dir), ImageReportWriter(args.workspace / "reports"),
         )
         report = await application.execute(request, args.resume_task)
@@ -91,7 +107,7 @@ async def execute(args):
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
-    parser = argparse.ArgumentParser(description="微博按需采集：图片与正文能力")
+    parser = argparse.ArgumentParser(description="微博按需采集：正文、图片、视频与音频能力")
     inputs = parser.add_mutually_exclusive_group(required=True)
     inputs.add_argument("--request-file", type=Path)
     inputs.add_argument("--url", help="单条微博链接或微博 ID，默认下载图片")

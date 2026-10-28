@@ -135,7 +135,7 @@ class ImageJobController:
         def progress(event: ProgressEvent):
             if event.task_id:
                 job.task_id = event.task_id
-            job.phase = "downloading" if event.phase == "images" else "collecting"
+            job.phase = "downloading" if event.phase in ("images", "media") else "collecting"
             job.completed, job.total = event.completed, event.total
             job.progress_capability = event.capability or job.progress_capability
             self.repository.save(job)
@@ -183,6 +183,8 @@ class ImageJobController:
         job = self.repository.get(job_id)
         images = []
         texts = []
+        video = []
+        audio = []
         for result in (job.report or {}).get("results", []):
             if result["capability"] == "images":
                 for item in result.get("assets", []):
@@ -192,9 +194,16 @@ class ImageJobController:
                 texts.append({"note_id": result["note_id"], "status": result["status"],
                               "error_code": result.get("error_code"), "text": result["content"]["text"],
                               "complete": result["content"]["complete"]})
+            elif result["capability"] in ("video", "audio"):
+                media = video if result["capability"] == "video" else audio
+                for item in result.get("assets", []):
+                    media.append({"status": item["status"], "error_code": item.get("error_code"),
+                                  "downloaded": bool(item.get("local_path")),
+                                  "url": item["asset"]["url"], "kind": result["capability"]})
         return {"id": job.id, "url": job.source_url, "phase": job.phase,
                 "completed": job.completed, "total": job.total, "error_code": job.error_code,
                 "attempts": job.attempts, "images": images, "texts": texts,
+                "video": video, "audio": audio,
                 "capabilities": list(job.request.get("collect", {})),
                 "progress_capability": job.progress_capability,
                 "qr_version": self.qr.get(job_id, (0, b""))[0], "task_id": job.task_id}

@@ -21,8 +21,12 @@
 import asyncio
 import io
 import math
+import os
+import tempfile
 import time
+from pathlib import Path
 from typing import Protocol
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 from PIL import Image, UnidentifiedImageError
@@ -181,6 +185,68 @@ class HttpBinaryTransport:
             raise CollectionError("asset_request_failed") from exc
         return b"".join(chunks)
 
+    @staticmethod
+    def _media_host_allowed(url: str) -> bool:
+        parsed = urlsplit(url)
+        host = (parsed.hostname or "").lower().rstrip(".")
+        trusted = ("weibocdn.com", "sinaimg.cn", "weibo.cn")
+        return (
+            parsed.scheme == "https" and parsed.username is None and parsed.password is None
+            and parsed.port in (None, 443)
+            and any(host == domain or host.endswith("." + domain) for domain in trusted)
+        )
+
+    async def fetch_to_file(self, url: str, path: Path, max_bytes: int) -> int:
+        current = url
+        try:
+            for _ in range(6):
+                if not self._media_host_allowed(current):
+                    raise CollectionError("unsupported_media_host")
+                await self.gate.wait()
+                async with self.client.stream(
+                    "GET", current,
+                    headers={"Referer": "https://weibo.com/"}, follow_redirects=False,
+                ) as response:
+                    if response.status_code in (301, 302, 303, 307, 308):
+                        location = response.headers.get("location")
+                        if not location:
+                            raise CollectionError("asset_request_failed")
+                        current = urljoin(current, location)
+                        continue
+                    response.raise_for_status()
+                    declared = response.headers.get("content-length")
+                    if declared is not None:
+                        try:
+                            if int(declared) > max_bytes:
+                                raise CollectionError("asset_too_large")
+                        except ValueError as exc:
+                            raise CollectionError("asset_request_failed") from exc
+                    total = 0
+                    with path.open("wb") as stream:
+                        async for chunk in response.aiter_bytes():
+                            total += len(chunk)
+                            if total > max_bytes:
+                                raise CollectionError("asset_too_large")
+                            stream.write(chunk)
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                    if total == 0:
+                        raise CollectionError("invalid_asset_content")
+                    return total
+            raise CollectionError("too_many_asset_redirects")
+        except CollectionError:
+            path.unlink(missing_ok=True)
+            raise
+        except asyncio.CancelledError:
+            path.unlink(missing_ok=True)
+            raise
+        except httpx.HTTPError as exc:
+            path.unlink(missing_ok=True)
+            raise CollectionError("asset_request_failed") from exc
+        except OSError as exc:
+            path.unlink(missing_ok=True)
+            raise CollectionError("asset_write_failed") from exc
+
 
 class ImageValidator:
     def validate(self, content: bytes) -> DownloadedAsset:
@@ -196,6 +262,74 @@ class ImageValidator:
         except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError) as exc:
             raise CollectionError("invalid_image_content") from exc
         return DownloadedAsset(content, extension)
+
+
+class VideoFileValidator:
+    """Check a media container signature without buffering a full video in RAM."""
+
+    def validate_file(self, path: Path) -> str:
+        with path.open("rb") as stream:
+            header = stream.read(64)
+        if len(header) >= 12 and header[4:8] == b"ftyp":
+            return "mp4"
+        if header.startswith(b"\x1a\x45\xdf\xa3"):
+            return "webm"
+        if header.startswith(b"FLV"):
+            return "flv"
+        raise CollectionError("invalid_video_content")
+
+
+class AudioFileValidator:
+    """Check common audio container/frame signatures without loading the file."""
+
+    def validate_file(self, path: Path) -> str:
+        with path.open("rb") as stream:
+            header = stream.read(64)
+        if header.startswith(b"ID3"):
+            return "mp3"
+        if len(header) >= 2 and header[0] == 0xFF and header[1] & 0xF6 == 0xF0:
+            return "aac"
+        if len(header) >= 2 and header[0] == 0xFF and header[1] & 0xE0 == 0xE0:
+            return "mp3"
+        if header.startswith(b"OggS"):
+            return "ogg"
+        if len(header) >= 12 and header[4:8] == b"ftyp":
+            return "m4a"
+        raise CollectionError("invalid_audio_content")
+
+
+class StreamingAssetDownloader:
+    """Stream large assets to a temporary file, then validate and hand off to storage."""
+
+    def __init__(self, transport: HttpBinaryTransport, validator, directory: Path, max_bytes: int):
+        self.transport = transport
+        self.validator = validator
+        self.directory = directory.resolve()
+        self.max_bytes = max_bytes
+
+    async def download(self, asset: MediaAsset):
+        from .models import DownloadedFile
+
+        temporary = None
+        try:
+            self.directory.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(dir=self.directory, suffix=".part", delete=False) as stream:
+                temporary = Path(stream.name)
+            await self.transport.fetch_to_file(asset.url, temporary, self.max_bytes)
+            extension = self.validator.validate_file(temporary)
+            return DownloadedFile(temporary, extension)
+        except CollectionError:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+            raise
+        except asyncio.CancelledError:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+            raise
+        except OSError as exc:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+            raise CollectionError("asset_write_failed") from exc
 
 
 class ValidatedAssetDownloader:
