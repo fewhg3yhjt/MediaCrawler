@@ -67,6 +67,8 @@ class CollectionPlanner:
             collection = request.source.collection
         elif request.source.type == "creator":
             collection = f"creator_{request.source.creator_id}"
+        elif request.source.type == "self_feed":
+            collection = f"self_{request.source.feed_type}"
         else:
             collection = "manual"
         return CollectionPlan(

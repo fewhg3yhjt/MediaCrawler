@@ -23,13 +23,13 @@ from pathlib import Path
 from .models import CrawlRequest
 from .presentation import ImageReportWriter
 from .service import CollectionPlanner, TaskRunner
-from .sources import ArchiveSource, CreatorSource, DetailSource
+from .sources import ArchiveSource, CreatorSource, DetailSource, SelfFeedSource
 
 
 class PostSourceFactory:
-    def __init__(self, archive_directory: Path, creator_client=None, request_gate=None):
+    def __init__(self, archive_directory: Path, source_client=None, request_gate=None):
         self.archive_directory = archive_directory
-        self.creator_client = creator_client
+        self.source_client = source_client
         self.request_gate = request_gate
         self.factories = {
             "detail": lambda spec: DetailSource(spec.note_ids),
@@ -39,12 +39,19 @@ class PostSourceFactory:
     def create(self, spec, max_posts: int = 1000):
         if spec.type == "creator":
             return self._creator(spec, max_posts)
+        if spec.type == "self_feed":
+            return self._self_feed(spec, max_posts)
         return self.factories[spec.type](spec)
 
     def _creator(self, spec, max_posts: int):
-        if self.creator_client is None or self.request_gate is None:
+        if self.source_client is None or self.request_gate is None:
             raise ValueError("creator source dependencies are unavailable")
-        return CreatorSource(spec.creator_id, self.creator_client, self.request_gate, max_pages=max_posts + 2)
+        return CreatorSource(spec.creator_id, self.source_client, self.request_gate, max_pages=max_posts + 2)
+
+    def _self_feed(self, spec, max_posts: int):
+        if self.source_client is None or self.request_gate is None:
+            raise ValueError("self feed source dependencies are unavailable")
+        return SelfFeedSource(spec.feed_type, self.source_client, self.request_gate, max_pages=max_posts + 2)
 
 
 class CollectionApplication:

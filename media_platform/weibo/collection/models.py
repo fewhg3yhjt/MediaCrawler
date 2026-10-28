@@ -78,6 +78,11 @@ class CreatorSpec(Contract):
         return WeiboCreatorLink.parse(value).creator_id
 
 
+class SelfFeedSpec(Contract):
+    type: Literal["self_feed"]
+    feed_type: Literal["favorite", "liked"]
+
+
 class ArchiveSpec(Contract):
     type: Literal["archive"]
     collection: str = Field(pattern=r"^[A-Za-z0-9_-]+$")
@@ -103,7 +108,7 @@ class OutputSpec(Contract):
 
 class CrawlRequest(Contract):
     schema_version: Literal[1] = 1
-    source: Annotated[DetailSpec | ArchiveSpec | CreatorSpec, Field(discriminator="type")]
+    source: Annotated[DetailSpec | ArchiveSpec | CreatorSpec | SelfFeedSpec, Field(discriminator="type")]
     collect: dict[str, dict] = Field(min_length=1)
     update: UpdateSpec = Field(default_factory=UpdateSpec)
     limits: Limits = Field(default_factory=Limits)

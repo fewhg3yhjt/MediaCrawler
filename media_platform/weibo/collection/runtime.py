@@ -73,6 +73,8 @@ class WebImageExecutor:
                         await login_flow.ensure_creator(context, request.source.creator_id, on_qr)
                     elif request.source.type == "detail":
                         await login_flow.ensure(context, request.source.note_ids[0], on_qr)
+                    elif request.source.type == "self_feed":
+                        await login_flow.ensure_self_feed(context, request.source.feed_type, on_qr)
                 client = BrowserWeiboDetailClient(context.request)
             else:
                 detail_http = await stack.enter_async_context(httpx.AsyncClient(timeout=30, headers={"User-Agent": "Mozilla/5.0"}))

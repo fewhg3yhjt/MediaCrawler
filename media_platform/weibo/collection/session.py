@@ -164,6 +164,59 @@ def decode_comments_page(status: int, url: str, payload: dict | None) -> dict:
     return {"items": data["data"], "max_id": max_id, "max_id_type": max_id_type}
 
 
+def decode_current_user(status: int, url: str, payload: dict | None) -> str:
+    host = urlsplit(url).hostname or ""
+    if 300 <= status < 400:
+        raise CollectionError("login_required")
+    if status == 401 or host not in ("m.weibo.cn", "www.weibo.cn"):
+        raise CollectionError("login_required")
+    if status == 403:
+        raise CollectionError("access_restricted")
+    if status != 200 or not isinstance(payload, dict):
+        raise CollectionError("current_user_unavailable")
+    if payload.get("ok") != 1:
+        raise CollectionError("login_required")
+    data = payload.get("data")
+    uid = data.get("uid") if isinstance(data, dict) else None
+    uid = str(uid or "")
+    if not uid.isascii() or not uid.isdigit() or int(uid) <= 0:
+        raise CollectionError("current_user_unavailable")
+    return str(int(uid))
+
+
+def decode_self_feed_page(status: int, url: str, payload: dict | None, feed_type: str) -> dict:
+    host = urlsplit(url).hostname or ""
+    if 300 <= status < 400:
+        raise CollectionError("login_required")
+    if status == 401 or host not in ("weibo.com", "www.weibo.com"):
+        raise CollectionError("login_required")
+    if status == 403:
+        raise CollectionError("access_restricted")
+    if status != 200 or not isinstance(payload, dict):
+        raise CollectionError("self_feed_request_failed")
+    if payload.get("ok") != 1:
+        message = str(payload.get("msg") or payload.get("message") or "").lower()
+        if any(token in message for token in ("login", "登录", "passport", "cookie")):
+            raise CollectionError("login_required")
+        raise CollectionError("access_restricted")
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        raise CollectionError("invalid_self_feed_page")
+    items = data.get("status") or data.get("list") or []
+    if not isinstance(items, list):
+        raise CollectionError("invalid_self_feed_page")
+    result = {"list": items}
+    total = data.get("total_number") or data.get("total")
+    if total is not None:
+        try:
+            total = int(total)
+        except (TypeError, ValueError) as exc:
+            raise CollectionError("invalid_self_feed_page") from exc
+        if total >= 0:
+            result["total"] = total
+    return result
+
+
 class HttpWeiboDetailClient:
     def __init__(self, client: httpx.AsyncClient):
         self.client = client
@@ -224,6 +277,42 @@ class HttpWeiboDetailClient:
         except ValueError:
             payload = None
         return decode_comments_page(response.status_code, str(response.url), payload)
+
+    async def get_current_user_uid(self) -> str:
+        try:
+            response = await self.client.get(
+                "https://m.weibo.cn/api/config", headers={"Referer": "https://m.weibo.cn/"},
+                follow_redirects=False,
+            )
+        except httpx.HTTPError as exc:
+            raise CollectionError("current_user_unavailable") from exc
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = None
+        return decode_current_user(response.status_code, str(response.url), payload)
+
+    async def get_self_feed_page(self, feed_type: str, uid: str, page: int) -> dict:
+        if feed_type == "favorite":
+            path = "https://weibo.com/ajax/favorites/all_fav"
+            referer = f"https://weibo.com/u/page/fav/{uid}"
+        elif feed_type == "liked":
+            path = "https://weibo.com/ajax/statuses/likelist"
+            referer = f"https://weibo.com/u/page/like/{uid}"
+        else:
+            raise CollectionError("unsupported_self_feed")
+        try:
+            response = await self.client.get(
+                path, params={"uid": uid, "page": page, "with_total": "true"},
+                headers={"Referer": referer}, follow_redirects=False,
+            )
+        except httpx.HTTPError as exc:
+            raise CollectionError("self_feed_request_failed") from exc
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = None
+        return decode_self_feed_page(response.status_code, str(response.url), payload, feed_type)
 
 
 class BrowserProfileSession:
@@ -327,3 +416,39 @@ class BrowserWeiboDetailClient:
         except ValueError:
             payload = None
         return decode_comments_page(response.status, response.url, payload)
+
+    async def get_current_user_uid(self) -> str:
+        try:
+            response = await self.request.get(
+                "https://m.weibo.cn/api/config", headers={"Referer": "https://m.weibo.cn/"},
+                timeout=30000, max_redirects=0,
+            )
+        except Exception as exc:
+            raise CollectionError("current_user_unavailable") from exc
+        try:
+            payload = await response.json()
+        except ValueError:
+            payload = None
+        return decode_current_user(response.status, response.url, payload)
+
+    async def get_self_feed_page(self, feed_type: str, uid: str, page: int) -> dict:
+        if feed_type == "favorite":
+            path = "https://weibo.com/ajax/favorites/all_fav"
+            referer = f"https://weibo.com/u/page/fav/{uid}"
+        elif feed_type == "liked":
+            path = "https://weibo.com/ajax/statuses/likelist"
+            referer = f"https://weibo.com/u/page/like/{uid}"
+        else:
+            raise CollectionError("unsupported_self_feed")
+        try:
+            response = await self.request.get(
+                path, params={"uid": uid, "page": page, "with_total": "true"},
+                headers={"Referer": referer}, timeout=30000, max_redirects=0,
+            )
+        except Exception as exc:
+            raise CollectionError("self_feed_request_failed") from exc
+        try:
+            payload = await response.json()
+        except ValueError:
+            payload = None
+        return decode_self_feed_page(response.status, response.url, payload, feed_type)

@@ -37,8 +37,8 @@ from .web_jobs import ImageJobController
 
 
 class SubmitImageJob(Contract):
-    source_type: Literal["detail", "creator"] = "detail"
-    url: str = Field(min_length=1, max_length=2048)
+    source_type: Literal["detail", "creator", "self_favorites", "self_liked"] = "detail"
+    url: str = Field(default="", max_length=2048)
     max_posts: StrictInt = Field(default=1000, gt=0, le=10000)
     download: StrictBool = True
     include_images: StrictBool = True
@@ -52,10 +52,12 @@ class SubmitImageJob(Contract):
 
     @model_validator(mode="after")
     def validate_request(self):
-        if self.source_type == "creator":
-            WeiboCreatorLink.parse(self.url)
-        else:
+        if self.source_type == "detail":
             WeiboPostLink.parse(self.url)
+        elif self.source_type == "creator":
+            WeiboCreatorLink.parse(self.url)
+        elif not self.use_browser_session:
+            raise ValueError("self_feed_requires_login")
         if not (self.include_images or self.include_text or self.include_video or self.include_audio or self.include_comments):
             raise ValueError("select_at_least_one_capability")
         return self
@@ -123,17 +125,22 @@ def create_image_app(controller: ImageJobController, workspace: Path) -> FastAPI
             collect["audio"] = {"include_retweeted": body.include_retweeted}
         if body.include_comments:
             collect["comments"] = {"max_count": body.max_comments}
-        source = (
-            {"type": "creator", "creator_id": body.url}
-            if body.source_type == "creator"
-            else {"type": "detail", "note_ids": [body.url]}
-        )
+        if body.source_type == "creator":
+            source = {"type": "creator", "creator_id": body.url}
+            source_label = body.url
+        elif body.source_type == "detail":
+            source = {"type": "detail", "note_ids": [body.url]}
+            source_label = body.url
+        else:
+            feed_type = "favorite" if body.source_type == "self_favorites" else "liked"
+            source = {"type": "self_feed", "feed_type": feed_type}
+            source_label = "我的收藏" if feed_type == "favorite" else "我赞过"
         request = CrawlRequest.model_validate({
             "source": source,
             "collect": collect,
             "limits": {"max_posts": body.max_posts},
         })
-        job = controller.submit(request.model_dump(mode="json"), body.url, body.use_browser_session)
+        job = controller.submit(request.model_dump(mode="json"), source_label, body.use_browser_session)
         return controller.snapshot(job.id)
 
     @app.get("/api/jobs/{job_id}")

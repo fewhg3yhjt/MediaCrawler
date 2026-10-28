@@ -1,0 +1,17 @@
+{
+  "source": {
+    "type": "self_feed",
+    "feed_type": "favorite"
+  },
+  "collect": {
+    "text": {
+      "require_full_text": true
+    }
+  },
+  "limits": {
+    "max_posts": 1000
+  },
+  "output": {
+    "collection": "self_favorite"
+  }
+}

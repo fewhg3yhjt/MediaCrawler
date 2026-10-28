@@ -72,6 +72,38 @@ def image_manifest(post_id: str, raw: dict) -> ImageManifest:
     return ImageManifest(tuple(assets), originals, retweeted_complete)
 
 
+def post_ref_from_status(raw: dict) -> PostRef:
+    if not isinstance(raw, dict):
+        raise CollectionError("invalid_post_snapshot")
+    note_id = str(raw.get("id") or "")
+    if not note_id.isascii() or not note_id.isdigit() or int(note_id) <= 0:
+        raise CollectionError("invalid_post_snapshot")
+    try:
+        return PostRef(note_id, image_manifest(note_id, raw), _text_snapshot(note_id, raw))
+    except CollectionError:
+        raise
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise CollectionError("invalid_post_snapshot") from exc
+
+
+def _text_snapshot(note_id: str, raw: dict) -> PostText | None:
+    body = raw.get("longTextContent") or raw.get("text")
+    value = raw.get("text_raw")
+    if body is None and value is None:
+        return None
+    if body is not None and not isinstance(body, str):
+        raise CollectionError("invalid_text_response")
+    if value is not None and not isinstance(value, str):
+        raise CollectionError("invalid_text_response")
+    from .text import visible_text
+    if raw.get("longTextContent"):
+        value = visible_text(raw["longTextContent"])
+    elif not value:
+        value = visible_text(body or "")
+    complete = not bool(raw.get("isLongText")) or bool(raw.get("longTextContent"))
+    return PostText(note_id, value or "", body or value or "", complete)
+
+
 class CreatorSource:
     """Page through one creator timeline and yield reusable post references."""
 
@@ -111,19 +143,16 @@ class CreatorSource:
                 raw = item.get("mblog") if isinstance(item, dict) and isinstance(item.get("mblog"), dict) else item
                 if not isinstance(raw, dict):
                     raise CollectionError("invalid_creator_page")
-                note_id = str(raw.get("id") or "")
-                if not note_id.isascii() or not note_id.isdigit() or int(note_id) <= 0:
-                    raise CollectionError("invalid_creator_page")
+                try:
+                    post = post_ref_from_status(raw)
+                except CollectionError as exc:
+                    raise CollectionError("invalid_creator_page") from exc
+                note_id = post.note_id
                 ids.append(note_id)
                 if note_id in discovered:
                     continue
                 discovered.add(note_id)
-                try:
-                    image_data = image_manifest(note_id, raw)
-                    text_data = self._text_snapshot(note_id, raw)
-                except (ValueError, TypeError, AttributeError) as exc:
-                    raise CollectionError("invalid_creator_page") from exc
-                yield PostRef(note_id, image_data, text_data)
+                yield post
 
             signature = tuple(ids)
             if signature == previous_page_ids:
@@ -137,23 +166,79 @@ class CreatorSource:
             page += 1
         raise CollectionError("creator_page_limit")
 
-    @staticmethod
-    def _text_snapshot(note_id: str, raw: dict) -> PostText | None:
-        body = raw.get("longTextContent") or raw.get("text")
-        value = raw.get("text_raw")
-        if body is None and value is None:
-            return None
-        if body is not None and not isinstance(body, str):
-            raise CollectionError("invalid_text_response")
-        if value is not None and not isinstance(value, str):
-            raise CollectionError("invalid_text_response")
-        from .text import visible_text
-        if raw.get("longTextContent"):
-            value = visible_text(raw["longTextContent"])
-        elif not value:
-            value = visible_text(body or "")
-        complete = not bool(raw.get("isLongText")) or bool(raw.get("longTextContent"))
-        return PostText(note_id, value or "", body or value or "", complete)
+
+
+class SelfFeedSource:
+    """Discover the current account's favorite or liked timeline."""
+
+    def __init__(self, feed_type: str, client, gate, max_pages: int = 1000):
+        if feed_type not in ("favorite", "liked"):
+            raise ValueError("self feed must be favorite or liked")
+        self.feed_type = feed_type
+        self.client = client
+        self.gate = gate
+        self.max_pages = max_pages
+
+    async def discover(self) -> AsyncIterator[PostRef]:
+        await self.gate.wait()
+        try:
+            uid = await self.client.get_current_user_uid()
+        except CollectionError:
+            raise
+        except Exception as exc:
+            raise CollectionError("current_user_unavailable") from exc
+        if not isinstance(uid, str) or not uid.isascii() or not uid.isdigit() or int(uid) <= 0:
+            raise CollectionError("current_user_unavailable")
+
+        page, empty_pages, discovered = 1, 0, set()
+        previous_page_ids = None
+        while page <= self.max_pages:
+            await self.gate.wait()
+            try:
+                data = await self.client.get_self_feed_page(self.feed_type, uid, page)
+            except CollectionError:
+                raise
+            except Exception as exc:
+                raise CollectionError("self_feed_request_failed") from exc
+            if not isinstance(data, dict) or not isinstance(data.get("list"), list):
+                raise CollectionError("invalid_self_feed_page")
+            items = data["list"]
+            if not items:
+                if data.get("has_more") is False:
+                    return
+                empty_pages += 1
+                if empty_pages >= 2:
+                    if isinstance(data.get("total"), int) and len(discovered) < data["total"]:
+                        raise CollectionError("empty_self_feed_page_unverified")
+                    return
+                page += 1
+                continue
+
+            empty_pages = 0
+            ids = []
+            for raw in items:
+                status = raw.get("mblog") if isinstance(raw, dict) and isinstance(raw.get("mblog"), dict) else raw
+                try:
+                    post = post_ref_from_status(status)
+                except CollectionError as exc:
+                    raise CollectionError("invalid_self_feed_page") from exc
+                note_id = post.note_id
+                ids.append(note_id)
+                if note_id not in discovered:
+                    discovered.add(note_id)
+                    yield post
+
+            signature = tuple(ids)
+            if signature == previous_page_ids:
+                raise CollectionError("self_feed_page_repeated")
+            previous_page_ids = signature
+            total = data.get("total")
+            if isinstance(total, int) and total > 0 and len(discovered) >= total:
+                return
+            if data.get("has_more") is False:
+                return
+            page += 1
+        raise CollectionError("self_feed_page_limit")
 
 
 def _urls(value) -> list[str]:

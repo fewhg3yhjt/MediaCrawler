@@ -50,6 +50,13 @@ class QrLoginFlow:
             f"https://weibo.com/u/{creator_id}", on_qr,
         )
 
+    async def ensure_self_feed(self, context, feed_type: str, on_qr):
+        async def probe(client):
+            uid = await client.get_current_user_uid()
+            await client.get_self_feed_page(feed_type, uid, 1)
+
+        await self.ensure_access(context, probe, "https://weibo.com/", on_qr)
+
     async def ensure_access(self, context, probe, destination_url: str, on_qr):
         client = BrowserWeiboDetailClient(context.request)
         try:

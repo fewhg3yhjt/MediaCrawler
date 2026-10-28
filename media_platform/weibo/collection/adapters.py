@@ -106,6 +106,36 @@ class CachedDetailClient:
                 raise
         return self._responses[key]
 
+    async def get_current_user_uid(self) -> str:
+        method = getattr(self.client, "get_current_user_uid", None)
+        if method is None:
+            raise CollectionError("current_user_unavailable")
+        key = "current-user-uid"
+        if key in self._failures:
+            raise self._failures[key]
+        if key not in self._responses:
+            try:
+                self._responses[key] = await method()
+            except Exception as exc:
+                self._failures[key] = exc
+                raise
+        return self._responses[key]
+
+    async def get_self_feed_page(self, feed_type: str, uid: str, page: int) -> dict:
+        method = getattr(self.client, "get_self_feed_page", None)
+        if method is None:
+            raise CollectionError("self_feed_request_failed")
+        key = f"self-feed:{feed_type}:{uid}:{page}"
+        if key in self._failures:
+            raise self._failures[key]
+        if key not in self._responses:
+            try:
+                self._responses[key] = await method(feed_type, uid, page)
+            except Exception as exc:
+                self._failures[key] = exc
+                raise
+        return self._responses[key]
+
 
 class RequestGate:
     """One rate limit shared by detail and file requests in this process."""
