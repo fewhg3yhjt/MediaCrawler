@@ -21,6 +21,8 @@
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 import os
+import json
+import re
 from urllib.parse import urlsplit
 
 import httpx
@@ -82,6 +84,27 @@ def decode_detail(status: int, url: str, payload: dict | None, note_id: str) -> 
     return {"mblog": payload}
 
 
+def decode_mobile_detail(status: int, url: str, body: str, note_id: str) -> dict:
+    host = urlsplit(url).hostname or ""
+    if status in (401, 403):
+        raise CollectionError("access_restricted" if status == 403 else "login_required")
+    if 300 <= status < 400 or host not in ("m.weibo.cn", "www.weibo.cn"):
+        raise CollectionError("login_required")
+    if status != 200:
+        raise CollectionError("full_text_unavailable")
+    match = re.search(r"var \$render_data = (\[.*?\])\[0\]", body, re.DOTALL)
+    if match is None:
+        raise CollectionError("full_text_unavailable")
+    try:
+        payload = json.loads(match.group(1))
+        mblog = payload[0].get("status") if isinstance(payload, list) and payload else None
+    except (ValueError, TypeError, AttributeError, IndexError) as exc:
+        raise CollectionError("full_text_unavailable") from exc
+    if not isinstance(mblog, dict) or str(mblog.get("id")) != note_id:
+        raise CollectionError("detail_unavailable")
+    return {"mblog": mblog}
+
+
 class HttpWeiboDetailClient:
     def __init__(self, client: httpx.AsyncClient):
         self.client = client
@@ -99,6 +122,17 @@ class HttpWeiboDetailClient:
         except ValueError:
             payload = None
         return decode_detail(response.status_code, str(response.url), payload, note_id)
+
+    async def get_full_text_by_id(self, note_id: str) -> dict:
+        try:
+            response = await self.client.get(
+                f"https://m.weibo.cn/detail/{note_id}",
+                headers={"Referer": f"https://m.weibo.cn/detail/{note_id}"},
+                follow_redirects=False,
+            )
+        except httpx.HTTPError as exc:
+            raise CollectionError("full_text_unavailable") from exc
+        return decode_mobile_detail(response.status_code, str(response.url), response.text, note_id)
 
 
 class BrowserProfileSession:
@@ -156,3 +190,15 @@ class BrowserWeiboDetailClient:
         except ValueError:
             payload = None
         return decode_detail(response.status, response.url, payload, note_id)
+
+    async def get_full_text_by_id(self, note_id: str) -> dict:
+        try:
+            response = await self.request.get(
+                f"https://m.weibo.cn/detail/{note_id}",
+                headers={"Referer": f"https://m.weibo.cn/detail/{note_id}"},
+                timeout=30000, max_redirects=0,
+            )
+            body = await response.text()
+        except Exception as exc:
+            raise CollectionError("full_text_unavailable") from exc
+        return decode_mobile_detail(response.status, response.url, body, note_id)

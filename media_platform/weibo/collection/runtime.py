@@ -23,7 +23,7 @@ from pathlib import Path
 
 import httpx
 
-from .adapters import HttpBinaryTransport, ImageValidator, RequestGate, ValidatedAssetDownloader, WeiboImageResolver
+from .adapters import CachedDetailClient, HttpBinaryTransport, ImageValidator, RequestGate, ValidatedAssetDownloader, WeiboImageResolver
 from .application import CollectionApplication, PostSourceFactory
 from .images import ImageCollector
 from .login import QrLoginFlow
@@ -32,6 +32,7 @@ from .presentation import ImageReportWriter
 from .repository import FileAssetRepository, SqliteTaskRepository
 from .service import CollectionPlanner, TaskRunner, validate_capabilities
 from .session import BrowserProfileSession, BrowserWeiboDetailClient, HttpWeiboDetailClient
+from .text import TextCollector, WeiboTextResolver
 from .web_jobs import ImageWebJob
 
 
@@ -46,7 +47,10 @@ class WebImageExecutor:
 
     async def execute(self, job: ImageWebJob, progress, on_qr, login: bool) -> dict:
         request = CrawlRequest.model_validate(job.request)
-        validate_capabilities(request, {ImageCollector.name: ImageCollector.options_type})
+        validate_capabilities(request, {
+            ImageCollector.name: ImageCollector.options_type,
+            TextCollector.name: TextCollector.options_type,
+        })
         scope = self.account_scope if job.use_browser else "public"
         if job.scope != scope:
             job.task_id = None
@@ -61,14 +65,16 @@ class WebImageExecutor:
             else:
                 detail_http = await stack.enter_async_context(httpx.AsyncClient(timeout=30, headers={"User-Agent": "Mozilla/5.0"}))
                 client = HttpWeiboDetailClient(detail_http)
+            client = CachedDetailClient(client)
             gate = RequestGate(self.interval)
             collector = ImageCollector(
                 WeiboImageResolver(client, gate),
                 ValidatedAssetDownloader(HttpBinaryTransport(media_http, gate), ImageValidator()),
                 FileAssetRepository(self.workspace / "images"), scope, progress,
             )
+            text = TextCollector(WeiboTextResolver(client, gate, client), progress)
             application = CollectionApplication(
-                CollectionPlanner((collector,)),
+                CollectionPlanner((collector, text)),
                 TaskRunner(SqliteTaskRepository(self.workspace / "tasks.sqlite3"), scope, progress),
                 PostSourceFactory(self.workspace / "jsonl"), ImageReportWriter(self.workspace / "reports"),
             )

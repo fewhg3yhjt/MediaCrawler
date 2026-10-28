@@ -47,7 +47,7 @@ class ImageCollector:
             if options.include_retweeted or a.owner_post_id == post.note_id
         }
         if self.observer:
-            self.observer(ProgressEvent("images", post_id=post.note_id, total=len(selected)))
+            self.observer(ProgressEvent("images", post_id=post.note_id, capability=self.name, total=len(selected)))
         results = []
         for asset in selected.values():
             try:
@@ -62,7 +62,7 @@ class ImageCollector:
                 results.append(AssetResult(asset, "failed", error_code=exc.code))
             if self.observer:
                 self.observer(ProgressEvent("images", post_id=post.note_id,
-                                            completed=len(results), total=len(selected)))
+                                            capability=self.name, completed=len(results), total=len(selected)))
         failures = sum(item.status == "failed" for item in results)
         if not manifest.satisfies(options):
             status = "partial"

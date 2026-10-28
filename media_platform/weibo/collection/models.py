@@ -34,6 +34,10 @@ class ImageOptions(Contract):
     verify_manifest: StrictBool = False
 
 
+class TextOptions(Contract):
+    require_full_text: StrictBool = True
+
+
 class DetailSpec(Contract):
     type: Literal["detail"]
     note_ids: tuple[str, ...] = Field(min_length=1)
@@ -102,6 +106,16 @@ class ImageManifest:
 class PostRef:
     note_id: str
     images: ImageManifest | None = None
+    text: "PostText | None" = None
+
+
+@dataclass(frozen=True)
+class PostText:
+    note_id: str
+    text: str
+    raw_text: str
+    complete: bool
+    error_code: str | None = None
 
 
 @dataclass(frozen=True)
@@ -117,6 +131,7 @@ class CollectionResult:
     status: Literal["succeeded", "no_content", "partial", "failed", "restricted"]
     assets: tuple[AssetResult, ...] = ()
     error_code: str | None = None
+    content: PostText | None = None
 
 
 @dataclass(frozen=True)

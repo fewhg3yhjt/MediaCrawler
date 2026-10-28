@@ -59,15 +59,21 @@ class Executor:
             raise CollectionError("login_required")
         task_id = job.task_id or job.id
         progress(ProgressEvent("task_started", task_id=task_id))
-        progress(ProgressEvent("images", completed=1, total=1))
-        asset = MediaAsset("a", "123", "123", "https://wx1.sinaimg.cn/large/a.png")
-        download = job.request["collect"]["images"].get("download", False)
-        path = FileAssetRepository(self.workspace / "images").save("test", asset, DownloadedAsset(png(), "png")) if download else None
-        return {"task_id": task_id, "status": "succeeded", "results": [
-            {"note_id": "123", "capability": "images", "status": "succeeded", "assets": [
+        results = []
+        if "images" in job.request["collect"]:
+            progress(ProgressEvent("images", completed=1, total=1))
+            asset = MediaAsset("a", "123", "123", "https://wx1.sinaimg.cn/large/a.png")
+            download = job.request["collect"]["images"].get("download", False)
+            path = FileAssetRepository(self.workspace / "images").save("test", asset, DownloadedAsset(png(), "png")) if download else None
+            results.append({"note_id": "123", "capability": "images", "status": "succeeded", "assets": [
                 {"asset": asdict(asset), "status": "succeeded", "local_path": str(path) if path else None, "error_code": None}
-            ]}
-        ]}
+            ]})
+        if "text" in job.request["collect"]:
+            from media_platform.weibo.collection.models import PostText
+            progress(ProgressEvent("text", completed=1, total=1))
+            results.append({"note_id": "123", "capability": "text", "status": "succeeded",
+                            "error_code": None, "content": asdict(PostText("123", "sample body", "sample body", True))})
+        return {"task_id": task_id, "status": "succeeded", "results": results}
 
 
 @asynccontextmanager
@@ -138,6 +144,28 @@ def test_metadata_only_has_no_files_or_archive(tmp_path):
             assert not (tmp_path / "images").exists()
             assert (await client.get(f"/api/jobs/{job_id}/images/0")).status_code == 404
             assert (await client.get(f"/api/jobs/{job_id}/archive")).status_code == 409
+    asyncio.run(execute())
+
+
+def test_text_only_job_selects_only_text_and_returns_body(tmp_path):
+    async def execute():
+        async with environment(tmp_path) as (client, controller, executor, headers):
+            home = await client.get("/")
+            assert 'id="collectText"' in home.text and 'id="collectImages"' in home.text
+            response = await client.post("/api/jobs", headers=headers, json={
+                "url": "123", "include_images": False, "include_text": True,
+            })
+            assert response.status_code == 202
+            job_id = response.json()["id"]
+            await wait(controller)
+            state = controller.snapshot(job_id)
+            assert state["capabilities"] == ["text"]
+            assert state["images"] == []
+            assert state["texts"] == [{"note_id": "123", "status": "succeeded", "error_code": None,
+                                        "text": "sample body", "complete": True}]
+            assert not (tmp_path / "images").exists()
+            assert executor.calls == [(False, False, None)]
+
     asyncio.run(execute())
 
 

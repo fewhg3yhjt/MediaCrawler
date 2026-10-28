@@ -30,7 +30,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from .models import (
-    CollectionError, CollectionResult, DownloadedAsset, MediaAsset, ImageManifest, PostRef,
+    CollectionError, CollectionResult, DownloadedAsset, MediaAsset, ImageManifest, PostRef, PostText,
 )
 
 
@@ -99,13 +99,16 @@ class SqliteTaskRepository:
         posts = []
         for (snapshot,) in rows:
             item = json.loads(snapshot)
-            manifest = item["images"]
+            manifest = item.get("images")
             if manifest is not None:
                 manifest = ImageManifest(
                     tuple(MediaAsset(**a) for a in manifest["assets"]),
                     manifest["originals_complete"], manifest["retweeted_complete"],
                 )
-            posts.append(PostRef(item["note_id"], manifest))
+            text = item.get("text")
+            if text is not None:
+                text = PostText(**text)
+            posts.append(PostRef(item["note_id"], manifest, text))
         return posts
 
     def completed(self, task_id: str, post: PostRef, capability: str) -> bool:

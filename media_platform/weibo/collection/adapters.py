@@ -38,6 +38,41 @@ class DetailClient(Protocol):
     async def get_note_info_by_id(self, note_id: str) -> dict: ...
 
 
+class CachedDetailClient:
+    """Reuse a detail response across selected capabilities within one task."""
+
+    def __init__(self, client: DetailClient):
+        self.client = client
+        self._responses = {}
+        self._failures = {}
+
+    async def get_note_info_by_id(self, note_id: str) -> dict:
+        if note_id in self._failures:
+            raise self._failures[note_id]
+        if note_id not in self._responses:
+            try:
+                self._responses[note_id] = await self.client.get_note_info_by_id(note_id)
+            except Exception as exc:
+                self._failures[note_id] = exc
+                raise
+        return self._responses[note_id]
+
+    async def get_full_text_by_id(self, note_id: str) -> dict:
+        method = getattr(self.client, "get_full_text_by_id", None)
+        if method is None:
+            raise CollectionError("full_text_unavailable")
+        key = f"full:{note_id}"
+        if key in self._failures:
+            raise self._failures[key]
+        if key not in self._responses:
+            try:
+                self._responses[key] = await method(note_id)
+            except Exception as exc:
+                self._failures[key] = exc
+                raise
+        return self._responses[key]
+
+
 class RequestGate:
     """One rate limit shared by detail and file requests in this process."""
 

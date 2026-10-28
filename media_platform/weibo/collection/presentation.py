@@ -16,7 +16,7 @@
 # 详细许可条款请参阅项目根目录下的LICENSE文件。
 # 使用本代码即表示您同意遵守上述原则和LICENSE中的所有条款。
 
-"""Export saved results as a JSON manifest and a local-only image gallery."""
+"""Export saved collection results as JSON and a local-only HTML report."""
 
 import html
 import json
@@ -65,7 +65,16 @@ class ImageReportWriter:
         folder = self.directory / report["task_id"]
         folder.mkdir(parents=True, exist_ok=True)
         cards = []
+        text_cards = []
         for result in report.get("results", []):
+            content = result.get("content")
+            if result["capability"] == "text" and content is not None:
+                text_cards.append(
+                    f'<article><h2>微博 {html.escape(result["note_id"])}</h2>'
+                    f'<p>{"正文完整" if content["complete"] else "正文可能不完整"} · '
+                    f'{html.escape(result["status"])}</p><pre>{html.escape(content["text"])}</pre>'
+                    f'<p>{html.escape(result.get("error_code") or "")}</p></article>'
+                )
             if result["capability"] != "images":
                 continue
             for item in result.get("assets", []):
@@ -87,14 +96,16 @@ class ImageReportWriter:
         ]
         document = ('<!doctype html><html lang="zh-CN"><meta charset="utf-8">'
                     '<meta name="viewport" content="width=device-width, initial-scale=1">'
-                    '<title>微博图片采集结果</title><style>'
+                    '<title>微博采集结果</title><style>'
                     'body{font:16px system-ui;margin:32px;background:#f5f6f8;color:#20242b}'
                     '.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px}'
                     'article{padding:16px;background:white;border-radius:12px;overflow-wrap:anywhere}'
                     'img{width:100%;height:300px;object-fit:contain}a{color:#185abc}'
-                    '</style><h1>微博图片采集结果</h1>'
+                    'pre{white-space:pre-wrap;overflow-wrap:anywhere}'
+                    '</style><h1>微博采集结果</h1>'
                     f'<p>任务：{html.escape(report["task_id"])} · 状态：{html.escape(report["status"])}</p>'
-                    + "".join(errors) + '<div class="grid">' + "".join(cards) + '</div></html>')
+                    + "".join(errors) + '<h2>正文</h2><div class="grid">' + "".join(text_cards)
+                    + '</div><h2>图片</h2><div class="grid">' + "".join(cards) + '</div></html>')
         manifest = folder / "report.json"
         gallery = folder / "index.html"
         manifest.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")

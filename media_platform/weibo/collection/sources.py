@@ -22,7 +22,7 @@ import json
 from pathlib import Path
 from typing import AsyncIterator
 
-from .models import CollectionError, MediaAsset, ImageManifest, PostRef
+from .models import CollectionError, MediaAsset, ImageManifest, PostRef, PostText
 
 
 class DetailSource:
@@ -96,4 +96,11 @@ class ArchiveSource:
             assets.extend(image_asset(note_id, rt_id, url) for url in rt_urls)
             # Legacy nonempty values are useful, but cannot prove completeness.
             # No network is needed to reuse them; the result stays partial.
-            yield PostRef(note_id, ImageManifest(tuple(assets), False, False))
+            body = record.get("content")
+            text = None
+            if isinstance(body, str):
+                raw_text = record.get("raw_text")
+                if not isinstance(raw_text, str):
+                    raw_text = body
+                text = PostText(note_id, body, raw_text, record.get("text_complete") is True)
+            yield PostRef(note_id, ImageManifest(tuple(assets), False, False), text)

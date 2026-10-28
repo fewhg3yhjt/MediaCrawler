@@ -26,7 +26,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
-from pydantic import Field, StrictBool, field_validator
+from pydantic import Field, StrictBool, field_validator, model_validator
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .links import WeiboPostLink
@@ -38,6 +38,8 @@ from .web_jobs import ImageJobController
 class SubmitImageJob(Contract):
     url: str = Field(min_length=1, max_length=2048)
     download: StrictBool = True
+    include_images: StrictBool = True
+    include_text: StrictBool = False
     include_retweeted: StrictBool = False
     use_browser_session: StrictBool = False
 
@@ -46,6 +48,12 @@ class SubmitImageJob(Contract):
     def valid_link(cls, value):
         WeiboPostLink.parse(value)
         return value.strip()
+
+    @model_validator(mode="after")
+    def at_least_one_capability(self):
+        if not (self.include_images or self.include_text):
+            raise ValueError("select_at_least_one_capability")
+        return self
 
 
 class RetryImageJob(Contract):
@@ -99,9 +107,14 @@ def create_image_app(controller: ImageJobController, workspace: Path) -> FastAPI
 
     @app.post("/api/jobs", status_code=202)
     async def submit(body: SubmitImageJob):
+        collect = {}
+        if body.include_images:
+            collect["images"] = {"download": body.download, "include_retweeted": body.include_retweeted}
+        if body.include_text:
+            collect["text"] = {}
         request = CrawlRequest.model_validate({
             "source": {"type": "detail", "note_ids": [body.url]},
-            "collect": {"images": {"download": body.download, "include_retweeted": body.include_retweeted}},
+            "collect": collect,
         })
         job = controller.submit(request.model_dump(mode="json"), body.url, body.use_browser_session)
         return controller.snapshot(job.id)

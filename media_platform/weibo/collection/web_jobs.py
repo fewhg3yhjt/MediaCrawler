@@ -41,6 +41,7 @@ class ImageWebJob:
     scope: str | None = None
     completed: int = 0
     total: int | None = None
+    progress_capability: str | None = None
     error_code: str | None = None
     report: dict | None = None
     attempts: int = 0
@@ -136,6 +137,7 @@ class ImageJobController:
                 job.task_id = event.task_id
             job.phase = "downloading" if event.phase == "images" else "collecting"
             job.completed, job.total = event.completed, event.total
+            job.progress_capability = event.capability or job.progress_capability
             self.repository.save(job)
 
         def on_qr(content: bytes):
@@ -180,12 +182,19 @@ class ImageJobController:
     def snapshot(self, job_id: str) -> dict:
         job = self.repository.get(job_id)
         images = []
+        texts = []
         for result in (job.report or {}).get("results", []):
             if result["capability"] == "images":
                 for item in result.get("assets", []):
                     images.append({"status": item["status"], "error_code": item.get("error_code"),
                                    "downloaded": bool(item.get("local_path")), "url": item["asset"]["url"]})
+            elif result["capability"] == "text" and result.get("content") is not None:
+                texts.append({"note_id": result["note_id"], "status": result["status"],
+                              "error_code": result.get("error_code"), "text": result["content"]["text"],
+                              "complete": result["content"]["complete"]})
         return {"id": job.id, "url": job.source_url, "phase": job.phase,
                 "completed": job.completed, "total": job.total, "error_code": job.error_code,
-                "attempts": job.attempts, "images": images,
+                "attempts": job.attempts, "images": images, "texts": texts,
+                "capabilities": list(job.request.get("collect", {})),
+                "progress_capability": job.progress_capability,
                 "qr_version": self.qr.get(job_id, (0, b""))[0], "task_id": job.task_id}

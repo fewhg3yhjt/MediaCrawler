@@ -25,7 +25,7 @@ from pydantic import BaseModel
 
 from .models import (
     CollectionResult, DownloadedAsset, MediaAsset, ImageManifest,
-    ImageOptions, PostRef,
+    ImageOptions, TextOptions, PostRef, PostText,
     ProgressEvent,
 )
 
@@ -40,6 +40,14 @@ class ProgressObserver(Protocol):
 
 class ImageResolver(Protocol):
     async def resolve(self, post: PostRef, options: ImageOptions) -> ImageManifest: ...
+
+
+class TextResolver(Protocol):
+    async def resolve(self, post: PostRef, options: TextOptions) -> PostText: ...
+
+
+class LongTextSource(Protocol):
+    async def get_full_text_by_id(self, note_id: str) -> dict: ...
 
 
 class AssetDownloader(Protocol):
