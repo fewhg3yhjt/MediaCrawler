@@ -65,3 +65,31 @@ class WeiboPostLink:
                 raise ValueError("invalid Weibo post identifier")
             chunks.append(str(number).zfill(7) if end > 4 else str(number))
         return cls(str(int("".join(reversed(chunks)))))
+
+
+@dataclass(frozen=True)
+class WeiboCreatorLink:
+    creator_id: str
+
+    @classmethod
+    def parse(cls, value: str) -> "WeiboCreatorLink":
+        value = value.strip()
+        if re.fullmatch(r"[0-9]{1,20}", value):
+            if int(value) > 0:
+                return cls(str(int(value)))
+            raise ValueError("invalid Weibo creator identifier")
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme not in ("http", "https")
+            or parsed.hostname not in ("weibo.com", "www.weibo.com", "m.weibo.cn")
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.port not in (None, 80, 443)
+        ):
+            raise ValueError("unsupported Weibo creator link")
+        parts = parsed.path.strip("/").split("/")
+        if len(parts) != 2 or parts[0] != "u" or not re.fullmatch(r"[0-9]{1,20}", parts[1]):
+            raise ValueError("expected a numeric Weibo creator UID or profile link")
+        if int(parts[1]) <= 0:
+            raise ValueError("invalid Weibo creator identifier")
+        return cls(str(int(parts[1])))

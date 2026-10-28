@@ -204,6 +204,8 @@ class ImageJobController:
                 "completed": job.completed, "total": job.total, "error_code": job.error_code,
                 "attempts": job.attempts, "images": images, "texts": texts,
                 "video": video, "audio": audio,
+                "discovered": (job.report or {}).get("discovered"),
+                "stop_reason": (job.report or {}).get("stop_reason"),
                 "capabilities": list(job.request.get("collect", {})),
                 "progress_capability": job.progress_capability,
                 "qr_version": self.qr.get(job_id, (0, b""))[0], "task_id": job.task_id}

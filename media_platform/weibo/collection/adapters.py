@@ -35,7 +35,7 @@ from .models import (
     CollectionError, DownloadedAsset, MediaAsset, ImageManifest, ImageOptions, PostRef,
 )
 from .ports import AssetValidator, BinaryTransport
-from .sources import image_asset
+from .sources import image_asset, image_manifest
 
 
 class DetailClient(Protocol):
@@ -76,6 +76,21 @@ class CachedDetailClient:
                 raise
         return self._responses[key]
 
+    async def get_creator_notes_page(self, creator_id: str, page: int) -> dict:
+        method = getattr(self.client, "get_creator_notes_page", None)
+        if method is None:
+            raise CollectionError("creator_request_failed")
+        key = f"creator:{creator_id}:{page}"
+        if key in self._failures:
+            raise self._failures[key]
+        if key not in self._responses:
+            try:
+                self._responses[key] = await method(creator_id, page)
+            except Exception as exc:
+                self._failures[key] = exc
+                raise
+        return self._responses[key]
+
 
 class RequestGate:
     """One rate limit shared by detail and file requests in this process."""
@@ -91,43 +106,6 @@ class RequestGate:
         async with self._lock:
             await asyncio.sleep(max(0.0, self._next - time.monotonic()))
             self._next = time.monotonic() + self.interval
-
-
-def _extract(post_id: str, raw: dict) -> ImageManifest:
-    assets = []
-
-    def extract_owner(owner: dict) -> bool:
-        owner_id = str(owner.get("id") or "")
-        if not owner_id:
-            return False
-        pics = owner.get("pics")
-        infos = owner.get("pic_infos") or {}
-        if pics is None and infos:
-            ids = owner.get("pic_ids") or list(infos)
-            pics = [infos[pid] for pid in ids if pid in infos]
-        if pics is not None and not isinstance(pics, list):
-            raise CollectionError("invalid_image_response")
-        parsed = 0
-        for pic in pics or []:
-            if isinstance(pic, str):
-                url, pid = pic, ""
-            elif isinstance(pic, dict):
-                large = pic.get("largest") or pic.get("large") or {}
-                url, pid = large.get("url") or pic.get("url"), str(pic.get("pid") or "")
-            else:
-                continue
-            if url:
-                assets.append(image_asset(post_id, owner_id, url, pid))
-                parsed += 1
-        expected = len(owner.get("pic_ids") or [])
-        expected = max(expected, int(owner.get("pic_num") or 0))
-        known = any(key in owner for key in ("pics", "pic_infos", "pic_ids", "pic_num"))
-        return known and parsed >= expected and parsed == len(pics or []) and not owner.get("mix_media_info")
-
-    originals = extract_owner(raw)
-    rt = raw.get("retweeted_status")
-    retweeted = extract_owner(rt) if isinstance(rt, dict) else rt is None
-    return ImageManifest(tuple(assets), originals, retweeted)
 
 
 class WeiboImageResolver:
@@ -156,7 +134,7 @@ class WeiboImageResolver:
         if raw.get("deleted") or raw.get("state") == 7:
             raise CollectionError("detail_unavailable")
         try:
-            return _extract(post.note_id, raw)
+            return image_manifest(post.note_id, raw)
         except (ValueError, TypeError, AttributeError) as exc:
             raise CollectionError("invalid_image_response") from exc
 

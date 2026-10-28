@@ -66,7 +66,11 @@ class WebImageExecutor:
             if job.use_browser:
                 context = await stack.enter_async_context(BrowserProfileSession(self.profile, create=True).context())
                 if login:
-                    await QrLoginFlow(self.login_timeout).ensure(context, request.source.note_ids[0], on_qr)
+                    login_flow = QrLoginFlow(self.login_timeout)
+                    if request.source.type == "creator":
+                        await login_flow.ensure_creator(context, request.source.creator_id, on_qr)
+                    elif request.source.type == "detail":
+                        await login_flow.ensure(context, request.source.note_ids[0], on_qr)
                 client = BrowserWeiboDetailClient(context.request)
             else:
                 detail_http = await stack.enter_async_context(httpx.AsyncClient(timeout=30, headers={"User-Agent": "Mozilla/5.0"}))
@@ -94,6 +98,7 @@ class WebImageExecutor:
             application = CollectionApplication(
                 CollectionPlanner((collector, text, video, audio)),
                 TaskRunner(SqliteTaskRepository(self.workspace / "tasks.sqlite3"), scope, progress),
-                PostSourceFactory(self.workspace / "jsonl"), ImageReportWriter(self.workspace / "reports"),
+                PostSourceFactory(self.workspace / "jsonl", client, gate),
+                ImageReportWriter(self.workspace / "reports"),
             )
             return await application.execute(request, job.task_id)

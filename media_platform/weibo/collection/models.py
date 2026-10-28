@@ -63,6 +63,17 @@ class DetailSpec(Contract):
         return tuple(dict.fromkeys(WeiboPostLink.parse(item).note_id for item in value))
 
 
+class CreatorSpec(Contract):
+    type: Literal["creator"]
+    creator_id: str
+
+    @field_validator("creator_id")
+    @classmethod
+    def numeric_creator_id(cls, value):
+        from .links import WeiboCreatorLink
+        return WeiboCreatorLink.parse(value).creator_id
+
+
 class ArchiveSpec(Contract):
     type: Literal["archive"]
     collection: str = Field(pattern=r"^[A-Za-z0-9_-]+$")
@@ -79,7 +90,7 @@ class UpdateSpec(Contract):
 
 
 class Limits(Contract):
-    max_posts: int = Field(default=1000, gt=0, strict=True)
+    max_posts: int = Field(default=1000, gt=0, le=10000, strict=True)
 
 
 class OutputSpec(Contract):
@@ -88,7 +99,7 @@ class OutputSpec(Contract):
 
 class CrawlRequest(Contract):
     schema_version: Literal[1] = 1
-    source: Annotated[DetailSpec | ArchiveSpec, Field(discriminator="type")]
+    source: Annotated[DetailSpec | ArchiveSpec | CreatorSpec, Field(discriminator="type")]
     collect: dict[str, dict] = Field(min_length=1)
     update: UpdateSpec = Field(default_factory=UpdateSpec)
     limits: Limits = Field(default_factory=Limits)

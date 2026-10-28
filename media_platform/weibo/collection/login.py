@@ -39,9 +39,21 @@ class QrLoginFlow:
         self.refresh_after = refresh_after
 
     async def ensure(self, context, note_id: str, on_qr):
+        await self.ensure_access(
+            context, lambda client: client.get_note_info_by_id(note_id),
+            f"https://weibo.com/status/{note_id}", on_qr,
+        )
+
+    async def ensure_creator(self, context, creator_id: str, on_qr):
+        await self.ensure_access(
+            context, lambda client: client.get_creator_notes_page(creator_id, 1),
+            f"https://weibo.com/u/{creator_id}", on_qr,
+        )
+
+    async def ensure_access(self, context, probe, destination_url: str, on_qr):
         client = BrowserWeiboDetailClient(context.request)
         try:
-            await client.get_note_info_by_id(note_id)
+            await probe(client)
             return
         except CollectionError as exc:
             if exc.code not in ("login_required", "access_restricted"):
@@ -49,7 +61,7 @@ class QrLoginFlow:
         page = await context.new_page()
         login_url = "https://passport.weibo.com/sso/signin?" + urlencode({
             "entry": "miniblog", "source": "miniblog",
-            "url": f"https://weibo.com/status/{note_id}",
+            "url": destination_url,
         })
         try:
             await page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
@@ -58,7 +70,7 @@ class QrLoginFlow:
             while time.monotonic() < deadline:
                 host = urlsplit(page.url).hostname or ""
                 if host in ("weibo.com", "www.weibo.com"):
-                    await client.get_note_info_by_id(note_id)
+                    await probe(client)
                     return
                 if time.monotonic() - refreshed >= self.refresh_after:
                     if refreshed:

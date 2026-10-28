@@ -23,20 +23,23 @@ import mimetypes
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
-from pydantic import Field, StrictBool, field_validator, model_validator
+from pydantic import Field, StrictBool, StrictInt, model_validator
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from .links import WeiboPostLink
+from .links import WeiboCreatorLink, WeiboPostLink
 from .models import CollectionError, Contract, CrawlRequest
 from .presentation import ImageArchiveWriter
 from .web_jobs import ImageJobController
 
 
 class SubmitImageJob(Contract):
+    source_type: Literal["detail", "creator"] = "detail"
     url: str = Field(min_length=1, max_length=2048)
+    max_posts: StrictInt = Field(default=1000, gt=0, le=10000)
     download: StrictBool = True
     include_images: StrictBool = True
     include_text: StrictBool = False
@@ -45,14 +48,12 @@ class SubmitImageJob(Contract):
     include_retweeted: StrictBool = False
     use_browser_session: StrictBool = False
 
-    @field_validator("url")
-    @classmethod
-    def valid_link(cls, value):
-        WeiboPostLink.parse(value)
-        return value.strip()
-
     @model_validator(mode="after")
-    def at_least_one_capability(self):
+    def validate_request(self):
+        if self.source_type == "creator":
+            WeiboCreatorLink.parse(self.url)
+        else:
+            WeiboPostLink.parse(self.url)
         if not (self.include_images or self.include_text or self.include_video or self.include_audio):
             raise ValueError("select_at_least_one_capability")
         return self
@@ -118,9 +119,15 @@ def create_image_app(controller: ImageJobController, workspace: Path) -> FastAPI
             collect["video"] = {"include_retweeted": body.include_retweeted}
         if body.include_audio:
             collect["audio"] = {"include_retweeted": body.include_retweeted}
+        source = (
+            {"type": "creator", "creator_id": body.url}
+            if body.source_type == "creator"
+            else {"type": "detail", "note_ids": [body.url]}
+        )
         request = CrawlRequest.model_validate({
-            "source": {"type": "detail", "note_ids": [body.url]},
+            "source": source,
             "collect": collect,
+            "limits": {"max_posts": body.max_posts},
         })
         job = controller.submit(request.model_dump(mode="json"), body.url, body.use_browser_session)
         return controller.snapshot(job.id)

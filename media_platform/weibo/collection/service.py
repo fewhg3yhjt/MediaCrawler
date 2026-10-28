@@ -61,9 +61,14 @@ class CollectionPlanner:
         steps = tuple(
             CollectionStep(self.collectors[name], parsed) for name, parsed in options.items()
         )
-        collection = request.output.collection or (
-            request.source.collection if request.source.type == "archive" else "manual"
-        )
+        if request.output.collection:
+            collection = request.output.collection
+        elif request.source.type == "archive":
+            collection = request.source.collection
+        elif request.source.type == "creator":
+            collection = f"creator_{request.source.creator_id}"
+        else:
+            collection = "manual"
         return CollectionPlan(
             json.dumps(request.model_dump(mode="json"), sort_keys=True, ensure_ascii=False),
             steps, request.update.default, request.limits.max_posts, collection,
@@ -116,6 +121,7 @@ class TaskRunner:
                 await collect(post)
             report = self.repository.report(task_id)
             incomplete = any(item["status"] not in ("succeeded", "no_content") for item in report["capabilities"])
+            incomplete = incomplete or stop_reason == "limit_reached"
             all_failed = bool(report["capabilities"]) and all(
                 item["status"] in ("failed", "restricted") for item in report["capabilities"]
             )

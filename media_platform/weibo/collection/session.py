@@ -105,6 +105,35 @@ def decode_mobile_detail(status: int, url: str, body: str, note_id: str) -> dict
     return {"mblog": mblog}
 
 
+def decode_creator_page(status: int, url: str, payload: dict | None) -> dict:
+    host = urlsplit(url).hostname or ""
+    if status == 401 or host not in ("weibo.com", "www.weibo.com"):
+        raise CollectionError("login_required")
+    if status == 403:
+        raise CollectionError("access_restricted")
+    if status != 200:
+        raise CollectionError("creator_request_failed")
+    if not isinstance(payload, dict):
+        raise CollectionError("login_required")
+    if payload.get("ok") != 1:
+        message = str(payload.get("msg") or payload.get("message") or "").lower()
+        if any(token in message for token in ("login", "登录", "passport", "cookie")):
+            raise CollectionError("login_required")
+        raise CollectionError("access_restricted")
+    data = payload.get("data")
+    if not isinstance(data, dict) or not isinstance(data.get("list"), list):
+        raise CollectionError("invalid_creator_page")
+    result = {"list": data["list"]}
+    total = data.get("total")
+    if isinstance(total, int) and total >= 0:
+        result["total"] = total
+    if isinstance(data.get("has_more"), bool):
+        result["has_more"] = data["has_more"]
+    elif not result["list"] and "total" in result:
+        result["has_more"] = False
+    return result
+
+
 class HttpWeiboDetailClient:
     def __init__(self, client: httpx.AsyncClient):
         self.client = client
@@ -133,6 +162,21 @@ class HttpWeiboDetailClient:
         except httpx.HTTPError as exc:
             raise CollectionError("full_text_unavailable") from exc
         return decode_mobile_detail(response.status_code, str(response.url), response.text, note_id)
+
+    async def get_creator_notes_page(self, creator_id: str, page: int) -> dict:
+        url = "https://weibo.com/ajax/statuses/mymblog"
+        try:
+            response = await self.client.get(
+                url, params={"uid": creator_id, "page": page, "feature": 0},
+                headers={"Referer": f"https://weibo.com/u/{creator_id}"}, follow_redirects=False,
+            )
+        except httpx.HTTPError as exc:
+            raise CollectionError("creator_request_failed") from exc
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = None
+        return decode_creator_page(response.status_code, str(response.url), payload)
 
 
 class BrowserProfileSession:
@@ -202,3 +246,19 @@ class BrowserWeiboDetailClient:
         except Exception as exc:
             raise CollectionError("full_text_unavailable") from exc
         return decode_mobile_detail(response.status, response.url, body, note_id)
+
+    async def get_creator_notes_page(self, creator_id: str, page: int) -> dict:
+        try:
+            response = await self.request.get(
+                "https://weibo.com/ajax/statuses/mymblog",
+                params={"uid": creator_id, "page": page, "feature": 0},
+                headers={"Referer": f"https://weibo.com/u/{creator_id}"},
+                timeout=30000, max_redirects=0,
+            )
+        except Exception as exc:
+            raise CollectionError("creator_request_failed") from exc
+        try:
+            payload = await response.json()
+        except ValueError:
+            payload = None
+        return decode_creator_page(response.status, response.url, payload)

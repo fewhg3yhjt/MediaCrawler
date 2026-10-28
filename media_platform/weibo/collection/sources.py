@@ -34,6 +34,128 @@ class DetailSource:
             yield PostRef(note_id)
 
 
+def image_manifest(post_id: str, raw: dict) -> ImageManifest:
+    """Normalize image data already present in a detail or timeline response."""
+    assets = []
+
+    def extract_owner(owner: dict) -> bool:
+        owner_id = str(owner.get("id") or "")
+        if not owner_id:
+            return False
+        pics = owner.get("pics")
+        infos = owner.get("pic_infos") or {}
+        if pics is None and infos:
+            ids = owner.get("pic_ids") or list(infos)
+            pics = [infos[pid] for pid in ids if pid in infos]
+        if pics is not None and not isinstance(pics, list):
+            raise CollectionError("invalid_image_response")
+        parsed = 0
+        for pic in pics or []:
+            if isinstance(pic, str):
+                url, pid = pic, ""
+            elif isinstance(pic, dict):
+                large = pic.get("largest") or pic.get("large") or {}
+                url, pid = large.get("url") or pic.get("url"), str(pic.get("pid") or "")
+            else:
+                continue
+            if url:
+                assets.append(image_asset(post_id, owner_id, url, pid))
+                parsed += 1
+        expected = len(owner.get("pic_ids") or [])
+        expected = max(expected, int(owner.get("pic_num") or 0))
+        known = any(key in owner for key in ("pics", "pic_infos", "pic_ids", "pic_num"))
+        return known and parsed >= expected and parsed == len(pics or []) and not owner.get("mix_media_info")
+
+    originals = extract_owner(raw)
+    retweeted = raw.get("retweeted_status")
+    retweeted_complete = extract_owner(retweeted) if isinstance(retweeted, dict) else retweeted is None
+    return ImageManifest(tuple(assets), originals, retweeted_complete)
+
+
+class CreatorSource:
+    """Page through one creator timeline and yield reusable post references."""
+
+    def __init__(self, creator_id: str, client, gate, max_pages: int = 1000):
+        self.creator_id = creator_id
+        self.client = client
+        self.gate = gate
+        self.max_pages = max_pages
+
+    async def discover(self) -> AsyncIterator[PostRef]:
+        page, empty_pages, discovered = 1, 0, set()
+        previous_page_ids = None
+        while page <= self.max_pages:
+            await self.gate.wait()
+            try:
+                data = await self.client.get_creator_notes_page(self.creator_id, page)
+            except CollectionError:
+                raise
+            except Exception as exc:
+                raise CollectionError("creator_request_failed") from exc
+            if not isinstance(data, dict) or not isinstance(data.get("list"), list):
+                raise CollectionError("invalid_creator_page")
+
+            items = data["list"]
+            if not items:
+                if data.get("has_more") is False:
+                    return
+                empty_pages += 1
+                if empty_pages >= 2:
+                    return
+                page += 1
+                continue
+
+            empty_pages = 0
+            ids = []
+            for item in items:
+                raw = item.get("mblog") if isinstance(item, dict) and isinstance(item.get("mblog"), dict) else item
+                if not isinstance(raw, dict):
+                    raise CollectionError("invalid_creator_page")
+                note_id = str(raw.get("id") or "")
+                if not note_id.isascii() or not note_id.isdigit() or int(note_id) <= 0:
+                    raise CollectionError("invalid_creator_page")
+                ids.append(note_id)
+                if note_id in discovered:
+                    continue
+                discovered.add(note_id)
+                try:
+                    image_data = image_manifest(note_id, raw)
+                    text_data = self._text_snapshot(note_id, raw)
+                except (ValueError, TypeError, AttributeError) as exc:
+                    raise CollectionError("invalid_creator_page") from exc
+                yield PostRef(note_id, image_data, text_data)
+
+            signature = tuple(ids)
+            if signature == previous_page_ids:
+                raise CollectionError("creator_page_repeated")
+            previous_page_ids = signature
+            total = data.get("total")
+            if data.get("has_more") is False:
+                return
+            if isinstance(total, int) and total > 0 and len(discovered) >= total:
+                return
+            page += 1
+        raise CollectionError("creator_page_limit")
+
+    @staticmethod
+    def _text_snapshot(note_id: str, raw: dict) -> PostText | None:
+        body = raw.get("longTextContent") or raw.get("text")
+        value = raw.get("text_raw")
+        if body is None and value is None:
+            return None
+        if body is not None and not isinstance(body, str):
+            raise CollectionError("invalid_text_response")
+        if value is not None and not isinstance(value, str):
+            raise CollectionError("invalid_text_response")
+        from .text import visible_text
+        if raw.get("longTextContent"):
+            value = visible_text(raw["longTextContent"])
+        elif not value:
+            value = visible_text(body or "")
+        complete = not bool(raw.get("isLongText")) or bool(raw.get("longTextContent"))
+        return PostText(note_id, value or "", body or value or "", complete)
+
+
 def _urls(value) -> list[str]:
     if value is None:
         return []

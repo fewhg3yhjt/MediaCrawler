@@ -23,19 +23,28 @@ from pathlib import Path
 from .models import CrawlRequest
 from .presentation import ImageReportWriter
 from .service import CollectionPlanner, TaskRunner
-from .sources import ArchiveSource, DetailSource
+from .sources import ArchiveSource, CreatorSource, DetailSource
 
 
 class PostSourceFactory:
-    def __init__(self, archive_directory: Path):
+    def __init__(self, archive_directory: Path, creator_client=None, request_gate=None):
         self.archive_directory = archive_directory
+        self.creator_client = creator_client
+        self.request_gate = request_gate
         self.factories = {
             "detail": lambda spec: DetailSource(spec.note_ids),
             "archive": lambda spec: ArchiveSource(self.archive_directory, spec.collection, spec.note_ids),
         }
 
-    def create(self, spec):
+    def create(self, spec, max_posts: int = 1000):
+        if spec.type == "creator":
+            return self._creator(spec, max_posts)
         return self.factories[spec.type](spec)
+
+    def _creator(self, spec, max_posts: int):
+        if self.creator_client is None or self.request_gate is None:
+            raise ValueError("creator source dependencies are unavailable")
+        return CreatorSource(spec.creator_id, self.creator_client, self.request_gate, max_pages=max_posts + 2)
 
 
 class CollectionApplication:
@@ -48,6 +57,6 @@ class CollectionApplication:
 
     async def execute(self, request: CrawlRequest, resume_task: str | None = None) -> dict:
         plan = self.planner.plan(request)
-        report = await self.runner.run(plan, self.sources.create(request.source), resume_task)
+        report = await self.runner.run(plan, self.sources.create(request.source, plan.max_posts), resume_task)
         report["outputs"] = self.reports.write(report)
         return report

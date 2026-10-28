@@ -34,6 +34,10 @@ class PostSource(Protocol):
     def discover(self) -> AsyncIterator[PostRef]: ...
 
 
+class CreatorTimelineClient(Protocol):
+    async def get_creator_notes_page(self, creator_id: str, page: int) -> dict: ...
+
+
 class ProgressObserver(Protocol):
     def __call__(self, event: ProgressEvent) -> None: ...
 
