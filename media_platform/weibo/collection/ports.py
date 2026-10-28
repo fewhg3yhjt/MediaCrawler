@@ -26,11 +26,16 @@ from pydantic import BaseModel
 from .models import (
     CollectionResult, DownloadedAsset, MediaAsset, ImageManifest,
     ImageOptions, PostRef,
+    ProgressEvent,
 )
 
 
 class PostSource(Protocol):
     def discover(self) -> AsyncIterator[PostRef]: ...
+
+
+class ProgressObserver(Protocol):
+    def __call__(self, event: ProgressEvent) -> None: ...
 
 
 class ImageResolver(Protocol):

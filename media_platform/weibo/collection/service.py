@@ -24,8 +24,15 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel
 
-from .models import CollectionError, CollectionResult, CrawlRequest, TaskExecutionError
-from .ports import Collector, PostSource, TaskRepository
+from .models import CollectionError, CollectionResult, CrawlRequest, TaskExecutionError, ProgressEvent
+from .ports import Collector, PostSource, TaskRepository, ProgressObserver
+
+
+def validate_capabilities(request: CrawlRequest, types: dict[str, type[BaseModel]]) -> dict[str, BaseModel]:
+    unsupported = request.collect.keys() - types.keys()
+    if unsupported:
+        raise ValueError(f"unsupported capabilities: {', '.join(sorted(unsupported))}")
+    return {name: types[name].model_validate(options) for name, options in request.collect.items()}
 
 
 @dataclass(frozen=True)
@@ -50,12 +57,9 @@ class CollectionPlanner:
             raise ValueError("duplicate collector registration")
 
     def plan(self, request: CrawlRequest) -> CollectionPlan:
-        unsupported = request.collect.keys() - self.collectors.keys()
-        if unsupported:
-            raise ValueError(f"unsupported capabilities: {', '.join(sorted(unsupported))}")
+        options = validate_capabilities(request, {name: c.options_type for name, c in self.collectors.items()})
         steps = tuple(
-            CollectionStep(self.collectors[name], self.collectors[name].options_type.model_validate(options))
-            for name, options in request.collect.items()
+            CollectionStep(self.collectors[name], parsed) for name, parsed in options.items()
         )
         collection = request.output.collection or (
             request.source.collection if request.source.type == "archive" else "manual"
@@ -67,9 +71,10 @@ class CollectionPlanner:
 
 
 class TaskRunner:
-    def __init__(self, repository: TaskRepository, scope: str):
+    def __init__(self, repository: TaskRepository, scope: str, observer: ProgressObserver | None = None):
         self.repository = repository
         self.scope = scope
+        self.observer = observer
 
     async def run(self, plan: CollectionPlan, source: PostSource, resume_task: str | None = None) -> dict:
         if resume_task:
@@ -77,11 +82,15 @@ class TaskRunner:
             task_id = resume_task
         else:
             task_id = self.repository.create(plan.request_json, self.scope, plan.collection)
+        if self.observer:
+            self.observer(ProgressEvent("task_started", task_id=task_id))
 
         async def collect(post):
             for step in plan.steps:
                 if resume_task and self.repository.completed(task_id, post, step.collector.name):
                     continue
+                if self.observer:
+                    self.observer(ProgressEvent("collecting", task_id, post.note_id, step.collector.name))
                 try:
                     result = await step.collector.collect(post, step.options, plan.policy)
                 except Exception:
@@ -107,7 +116,10 @@ class TaskRunner:
                 await collect(post)
             report = self.repository.report(task_id)
             incomplete = any(item["status"] not in ("succeeded", "no_content") for item in report["capabilities"])
-            self.repository.finish(task_id, "partial" if incomplete else "succeeded", stop_reason)
+            all_failed = bool(report["capabilities"]) and all(
+                item["status"] in ("failed", "restricted") for item in report["capabilities"]
+            )
+            self.repository.finish(task_id, "failed" if all_failed else "partial" if incomplete else "succeeded", stop_reason)
         except asyncio.CancelledError:
             self.repository.finish(task_id, "cancelled", "cancelled")
             raise

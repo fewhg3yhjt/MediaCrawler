@@ -22,6 +22,7 @@
 
 - 新架构：`media_platform/weibo/collection/`。
 - 图片样板入口：`scripts/collect_weibo.py`。
+- 本地图片任务页面：`scripts/serve_weibo_images.py`（默认 `http://127.0.0.1:8767/`）。页面启动时不访问微博或读取浏览器登录目录；登录态是逐任务显式选择，扫码必须由用户主动点击授权。
 - 设计文档：[`docs/微博按需采集架构设计.md`](docs/微博按需采集架构设计.md)。
 - 使用与已落地边界：[`docs/微博图片采集样板使用说明.md`](docs/微博图片采集样板使用说明.md)。
 - 请求示例：`docs/examples/weibo_images_*.json`。
@@ -36,6 +37,7 @@
 - 图片架构针对性验证：`.venv\Scripts\python.exe -m pytest tests/test_weibo_collection.py -q`。
 - 涉及公共入口或导入机制时，补充适当回归；完整测试入口为 `.venv\Scripts\python.exe -m pytest tests -q`。
 - 架构测试重点验证可观察行为：未选择能力没有额外调用、来源复用、补抓不被整帖去重拦截、局部失败独立重试、取消恢复、集合归属、资源校验。
+- CLI 和网页共用 `CollectionApplication`；网页任务/会话生命周期通过 `ImageJobController` 与运行时组合器实现，不在 UI 控制器内重复实现采集逻辑。网页持久化不包含 Cookie、二维码或浏览器 profile 内容。
 - 默认用固定响应、假客户端和临时目录验证，不自动访问真实微博或读取真实登录态。在线验证要明确记录样本与限制，不推断未经验证的能力。
 - 新增 Python 文件遵循仓库文件头约定；可对指定文件使用 `tools/file_header_manager.py`，Windows 输出编码需要时加 `-X utf8`。
 - 不把 Cookie、浏览器会话、数据库、抓取数据或日志提交到代码仓库。交付时说明实际测试结果、已知失败和本轮未实现范围；不将测试失败隐藏为通过。

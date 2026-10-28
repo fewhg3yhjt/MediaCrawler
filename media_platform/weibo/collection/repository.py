@@ -26,6 +26,7 @@ import sqlite3
 import tempfile
 import uuid
 from dataclasses import asdict
+from contextlib import contextmanager
 from pathlib import Path
 
 from .models import (
@@ -62,8 +63,14 @@ class SqliteTaskRepository:
                 ON capability_runs(task_id, note_id, capability, id);
             """)
 
+    @contextmanager
     def _connect(self):
-        return sqlite3.connect(self.path, timeout=30)
+        db = sqlite3.connect(self.path, timeout=30)
+        try:
+            with db:
+                yield db
+        finally:
+            db.close()
 
     def create(self, request_json: str, scope: str, collection: str) -> str:
         task_id = uuid.uuid4().hex
@@ -128,9 +135,15 @@ class SqliteTaskRepository:
             latest = db.execute("""SELECT capability,status,COUNT(*) FROM capability_runs
                 WHERE id IN (SELECT MAX(id) FROM capability_runs WHERE task_id=? GROUP BY note_id,capability)
                 GROUP BY capability,status""", (task_id,)).fetchall()
+            results = db.execute("""SELECT note_id,capability,result FROM capability_runs
+                WHERE id IN (SELECT MAX(id) FROM capability_runs WHERE task_id=? GROUP BY note_id,capability)
+                ORDER BY note_id,capability""", (task_id,)).fetchall()
         return {"task_id": task_id, "status": row[0], "stop_reason": row[1],
                 "discovered": count, "capabilities": [
                     {"name": name, "status": status, "count": n} for name, status, n in latest
+                ], "results": [
+                    {"note_id": note_id, "capability": capability, **json.loads(result)}
+                    for note_id, capability, result in results
                 ]}
 
 
@@ -139,13 +152,18 @@ class FileAssetRepository:
         self.root = root.resolve()
         self.index = self.root / "assets.sqlite3"
 
+    @contextmanager
     def _connect(self):
         self.root.mkdir(parents=True, exist_ok=True)
         db = sqlite3.connect(self.index, timeout=30)
-        db.execute("""CREATE TABLE IF NOT EXISTS assets (
-                scope TEXT, owner TEXT, asset TEXT, kind TEXT, filename TEXT, checksum TEXT,
-                PRIMARY KEY(scope,owner,asset,kind))""")
-        return db
+        try:
+            with db:
+                db.execute("""CREATE TABLE IF NOT EXISTS assets (
+                    scope TEXT, owner TEXT, asset TEXT, kind TEXT, filename TEXT, checksum TEXT,
+                    PRIMARY KEY(scope,owner,asset,kind))""")
+                yield db
+        finally:
+            db.close()
 
     def find(self, scope: str, asset: MediaAsset) -> Path | None:
         try:

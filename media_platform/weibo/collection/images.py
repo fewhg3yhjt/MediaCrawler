@@ -18,8 +18,8 @@
 
 """Image collection orchestrates image work, independent of discovery and storage."""
 
-from .models import AssetResult, CollectionError, CollectionResult, ImageOptions, PostRef
-from .ports import AssetDownloader, AssetRepository, ImageResolver
+from .models import AssetResult, CollectionError, CollectionResult, ImageOptions, PostRef, ProgressEvent
+from .ports import AssetDownloader, AssetRepository, ImageResolver, ProgressObserver
 
 
 class ImageCollector:
@@ -28,22 +28,26 @@ class ImageCollector:
 
     def __init__(
         self, resolver: ImageResolver, downloader: AssetDownloader,
-        assets: AssetRepository, scope: str,
+        assets: AssetRepository, scope: str, observer: ProgressObserver | None = None,
     ):
         self.resolver = resolver
         self.downloader = downloader
         self.assets = assets
         self.scope = scope
+        self.observer = observer
 
     async def collect(self, post: PostRef, options: ImageOptions, policy: str) -> CollectionResult:
         try:
             manifest = await self.resolver.resolve(post, options)
         except CollectionError as exc:
-            return CollectionResult("failed", error_code=exc.code)
+            status = "restricted" if exc.code in ("login_required", "access_restricted") else "failed"
+            return CollectionResult(status, error_code=exc.code)
         selected = {
             (a.owner_post_id, a.asset_id): a for a in manifest.assets
             if options.include_retweeted or a.owner_post_id == post.note_id
         }
+        if self.observer:
+            self.observer(ProgressEvent("images", post_id=post.note_id, total=len(selected)))
         results = []
         for asset in selected.values():
             try:
@@ -56,6 +60,9 @@ class ImageCollector:
                 results.append(AssetResult(asset, "succeeded", str(path) if path else None))
             except CollectionError as exc:
                 results.append(AssetResult(asset, "failed", error_code=exc.code))
+            if self.observer:
+                self.observer(ProgressEvent("images", post_id=post.note_id,
+                                            completed=len(results), total=len(selected)))
         failures = sum(item.status == "failed" for item in results)
         if not manifest.satisfies(options):
             status = "partial"

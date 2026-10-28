@@ -71,9 +71,12 @@ class TestXhsStoreFactory:
     @patch('config.SAVE_DATA_OPTION', 'excel')
     def test_create_excel_store(self):
         """Test creating Excel store"""
-        # ContextVar cannot be mocked, so we test with actual value
+        from store.excel_store_base import ExcelStoreBase
+        from var import crawler_type_var
+
         store = XhsStoreFactory.create_store()
-        assert isinstance(store, XhsExcelStoreImplement)
+        assert isinstance(store, ExcelStoreBase)
+        assert store is ExcelStoreBase.get_instance(platform="xhs", crawler_type=crawler_type_var.get())
 
     @patch('config.SAVE_DATA_OPTION', 'jsonl')
     def test_create_jsonl_store(self):

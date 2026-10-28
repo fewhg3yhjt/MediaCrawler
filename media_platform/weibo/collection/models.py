@@ -41,9 +41,8 @@ class DetailSpec(Contract):
     @field_validator("note_ids")
     @classmethod
     def numeric_ids(cls, value):
-        if any(not item.isascii() or not item.isdigit() for item in value):
-            raise ValueError("note_ids must contain numeric Weibo IDs")
-        return tuple(dict.fromkeys(value))
+        from .links import WeiboPostLink
+        return tuple(dict.fromkeys(WeiboPostLink.parse(item).note_id for item in value))
 
 
 class ArchiveSpec(Contract):
@@ -115,7 +114,7 @@ class AssetResult:
 
 @dataclass(frozen=True)
 class CollectionResult:
-    status: Literal["succeeded", "no_content", "partial", "failed"]
+    status: Literal["succeeded", "no_content", "partial", "failed", "restricted"]
     assets: tuple[AssetResult, ...] = ()
     error_code: str | None = None
 
@@ -124,6 +123,16 @@ class CollectionResult:
 class DownloadedAsset:
     content: bytes
     extension: str
+
+
+@dataclass(frozen=True)
+class ProgressEvent:
+    phase: str
+    task_id: str | None = None
+    post_id: str | None = None
+    capability: str | None = None
+    completed: int = 0
+    total: int | None = None
 
 
 class CollectionError(Exception):

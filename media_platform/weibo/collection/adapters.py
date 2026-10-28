@@ -20,6 +20,7 @@
 
 import asyncio
 import io
+import math
 import time
 from typing import Protocol
 
@@ -41,7 +42,7 @@ class RequestGate:
     """One rate limit shared by detail and file requests in this process."""
 
     def __init__(self, interval: float = 2.0):
-        if interval < 0:
+        if not math.isfinite(interval) or interval < 0:
             raise ValueError("interval must be nonnegative")
         self.interval = interval
         self._next = 0.0
@@ -106,6 +107,8 @@ class WeiboImageResolver:
         await self.gate.wait()
         try:
             response = await self.client.get_note_info_by_id(post.note_id)
+        except CollectionError:
+            raise
         except Exception as exc:
             raise CollectionError("detail_request_failed") from exc
         raw = response.get("mblog")
@@ -152,6 +155,9 @@ class ImageValidator:
                 image.verify()
             if extension is None:
                 raise CollectionError("unsupported_image_format")
+            with Image.open(io.BytesIO(content)) as decoded:
+                decoded.seek(getattr(decoded, "n_frames", 1) - 1)
+                decoded.load()
         except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError) as exc:
             raise CollectionError("invalid_image_content") from exc
         return DownloadedAsset(content, extension)
