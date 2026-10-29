@@ -182,6 +182,9 @@ class SqliteTaskRepository:
             row = db.execute("SELECT status,stop_reason FROM tasks WHERE id=?", (task_id,)).fetchone()
             if row is None:
                 raise ValueError("unknown task")
+            source_row = db.execute(
+                "SELECT source_key,cursor,complete FROM source_checkpoints WHERE task_id=?", (task_id,),
+            ).fetchone()
             count = db.execute("SELECT COUNT(*) FROM task_posts WHERE task_id=?", (task_id,)).fetchone()[0]
             latest = db.execute("""SELECT capability,status,COUNT(*) FROM capability_runs
                 WHERE id IN (SELECT MAX(id) FROM capability_runs WHERE task_id=? GROUP BY note_id,capability)
@@ -189,8 +192,41 @@ class SqliteTaskRepository:
             results = db.execute("""SELECT note_id,capability,result FROM capability_runs
                 WHERE id IN (SELECT MAX(id) FROM capability_runs WHERE task_id=? GROUP BY note_id,capability)
                 ORDER BY note_id,capability""", (task_id,)).fetchall()
+        source = None
+        if source_row is not None:
+            try:
+                cursor = json.loads(source_row[1])
+            except (ValueError, TypeError):
+                cursor = {}
+            drift = cursor.get("page_drift", []) if isinstance(cursor, dict) else []
+            if not isinstance(drift, list):
+                drift = []
+            changed_page_ids = {
+                item.get("page") for item in drift
+                if isinstance(item, dict) and isinstance(item.get("page"), int)
+            }
+            def gap_ids(field: str) -> set[str]:
+                return {
+                    note_id for item in drift if isinstance(item, dict)
+                    for values in (item.get(field),) if isinstance(values, list)
+                    for note_id in values if isinstance(note_id, str)
+                }
+
+            pending_gap_ids = gap_ids("pending_ids")
+            unresolved_gap_ids = gap_ids("unresolved_ids")
+            source = {
+                "complete": bool(source_row[2]),
+                "next_page": cursor.get("next_page"),
+                "pages_scanned": cursor.get("pages_scanned"),
+                "overlap_pages": cursor.get("overlap_pages", 0),
+                "overlap_verified": cursor.get("overlap_verified") is True,
+                "changed_pages": len(changed_page_ids),
+                "pending_gap_count": len(pending_gap_ids),
+                "unresolved_gap_count": len(unresolved_gap_ids),
+                "page_drift": drift[-20:],
+            }
         return {"task_id": task_id, "status": row[0], "stop_reason": row[1],
-                "discovered": count, "capabilities": [
+                "discovered": count, "source": source, "capabilities": [
                     {"name": name, "status": status, "count": n} for name, status, n in latest
                 ], "results": [
                     {"note_id": note_id, "capability": capability, **json.loads(result)}

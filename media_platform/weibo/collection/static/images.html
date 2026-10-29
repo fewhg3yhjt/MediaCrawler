@@ -48,7 +48,7 @@
     <div id="notice" role="alert" class="error"></div>
     <section id="task" class="panel hidden">
       <h2>当前任务</h2><p id="phase" class="status" aria-live="polite"></p><p id="source" class="source muted"></p>
-      <progress id="progress" max="1" value="0"></progress><p id="counts" class="muted"></p><p id="reason" class="error"></p>
+      <progress id="progress" max="1" value="0"></progress><p id="counts" class="muted"></p><p id="reason" class="error"></p><p id="coverage" class="muted"></p>
       <div id="login" class="hidden"><p>请用微博 App 扫描并在手机确认。二维码会自动更新，超时后可重新扫码。</p><img id="qr" alt="微博官方登录二维码"></div>
       <div class="row">
         <button id="retry" class="secondary hidden" type="button">重试未完成部分</button>
@@ -81,6 +81,7 @@ function render(job){
   $('counts').textContent=job.total===null?'等待获取采集数量':`已处理 ${job.completed} / ${job.total} ${unit}`;
   if(job.discovered!==null&&job.discovered!==undefined){const limitNote=job.stop_reason==='limit_reached'?' · 已达到本次上限，可能还有更早微博':'';$('counts').textContent=`本次发现 ${job.discovered} 条微博${limitNote}`;}
   $('reason').textContent=job.error_code?(errors[job.error_code]||'部分数据未完成，请重试。'):'';
+  const coverage=job.source;if(!coverage){$('coverage').textContent='';}else if(coverage.changed_pages||coverage.pending_gap_count||coverage.unresolved_gap_count){$('coverage').textContent=`分页核对发现 ${coverage.changed_pages} 页内容有变化；${coverage.pending_gap_count} 条微博仍待核对，${coverage.unresolved_gap_count} 条在本次重扫范围内未找到。`;}else if(coverage.overlap_verified){$('coverage').textContent=`已重扫最近 ${coverage.overlap_pages||0} 页，未发现分页变化。`;}else{$('coverage').textContent=`任务恢复时会重扫最近 ${coverage.overlap_pages||0} 页以核对分页变化。`;}
   $('cancel').classList.toggle('hidden',!active.has(job.phase));
   $('retry').classList.toggle('hidden',!['partial','failed','cancelled','interrupted','restricted'].includes(job.phase));
   const canLogin=job.phase==='restricted';$('signin').classList.toggle('hidden',!canLogin);$('consent').classList.toggle('hidden',!canLogin);

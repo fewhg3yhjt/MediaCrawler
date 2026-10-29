@@ -25,6 +25,7 @@ from typing import AsyncIterator
 from datetime import datetime, timezone
 
 from .metrics import metrics_from_status
+from .pagination import PageContinuity
 from .models import (
     CollectionError, DiscoveryBatch, MediaAsset, ImageManifest, PostRef, PostText,
     SourceCheckpoint,
@@ -164,16 +165,9 @@ class CreatorSource:
         if checkpoint is not None and checkpoint.complete:
             return
         cursor = _source_cursor(checkpoint, self.checkpoint_key)
-        page = _cursor_int(cursor, "next_page", 1, 1)
-        pages_scanned = _cursor_int(cursor, "pages_scanned", page - 1)
-        empty_pages = _cursor_int(cursor, "empty_pages", 0)
-        previous = cursor.get("last_page_ids")
-        if previous is not None and (not isinstance(previous, list) or any(not isinstance(i, str) for i in previous)):
-            raise CollectionError("source_checkpoint_invalid")
-        previous_page_ids = tuple(previous) if previous is not None else None
-        if page != pages_scanned + 1:
-            raise CollectionError("source_checkpoint_invalid")
-        while pages_scanned < self.max_pages:
+        continuity = PageContinuity(cursor)
+        page, empty_pages = continuity.start_page, continuity.empty_pages
+        while page <= self.max_pages:
             await self.gate.wait()
             try:
                 data = await self.client.get_creator_notes_page(self.creator_id, page)
@@ -187,30 +181,6 @@ class CreatorSource:
             items = data["list"]
             total = data.get("total")
             known_total = total if type(total) is int and total > 0 else None
-            pages_scanned += 1
-            if not items:
-                if data.get("has_more") is False:
-                    yield DiscoveryBatch((), SourceCheckpoint(
-                        self.checkpoint_key,
-                        {"next_page": page + 1, "pages_scanned": pages_scanned,
-                         "empty_pages": empty_pages, "last_page_ids": list(previous_page_ids or ())},
-                        True,
-                    ), known_total, "has_more_false")
-                    return
-                empty_pages += 1
-                complete = empty_pages >= 2
-                yield DiscoveryBatch((), SourceCheckpoint(
-                    self.checkpoint_key,
-                    {"next_page": page + 1, "pages_scanned": pages_scanned,
-                     "empty_pages": empty_pages, "last_page_ids": list(previous_page_ids or ())},
-                    complete,
-                ), known_total, "empty_pages" if complete else None)
-                if complete:
-                    return
-                page += 1
-                continue
-
-            empty_pages = 0
             ids = []
             posts = []
             page_seen = set()
@@ -228,15 +198,48 @@ class CreatorSource:
                     page_seen.add(note_id)
                     posts.append(post)
 
-            signature = tuple(ids)
-            if signature == previous_page_ids:
-                raise CollectionError("creator_page_repeated")
-            previous_page_ids = signature
+            continuity.validate_page_signature(page, ids, "creator_page_repeated")
+            if continuity.is_overlap_page(page):
+                continuity.observe_overlap(page, ids)
+                yield DiscoveryBatch(tuple(posts), checkpoint)
+                if page == continuity.replay_end:
+                    continuity.finish_overlap()
+                    yield DiscoveryBatch((), SourceCheckpoint(
+                        self.checkpoint_key,
+                        continuity.cursor(continuity.frontier, continuity.empty_pages),
+                        False,
+                    ))
+                page += 1
+                continue
+
+            if not items:
+                continuity.observe_forward(page, ids)
+                if data.get("has_more") is False:
+                    complete = True
+                    yield DiscoveryBatch((), SourceCheckpoint(
+                        self.checkpoint_key,
+                        continuity.cursor(page + 1, empty_pages, complete),
+                        complete,
+                    ), known_total, "has_more_false")
+                    return
+                empty_pages += 1
+                complete = empty_pages >= 2
+                yield DiscoveryBatch((), SourceCheckpoint(
+                    self.checkpoint_key,
+                    continuity.cursor(page + 1, empty_pages, complete),
+                    complete,
+                ), known_total, "empty_pages" if complete else None)
+                if complete:
+                    return
+                page += 1
+                continue
+
+            empty_pages = 0
+            continuity.observe_forward(page, ids)
             complete = data.get("has_more") is False
             yield DiscoveryBatch(tuple(posts), SourceCheckpoint(
                 self.checkpoint_key,
-                {"next_page": page + 1, "pages_scanned": pages_scanned,
-                 "empty_pages": 0, "last_page_ids": list(signature)},
+                continuity.cursor(page + 1, empty_pages, complete),
                 complete,
             ), known_total, "has_more_false" if complete else None)
             if complete:
@@ -288,25 +291,18 @@ class SelfFeedSource:
         expected_uid = cursor.get("uid")
         if expected_uid is not None and expected_uid != uid:
             raise CollectionError("source_identity_changed")
-
-        page = _cursor_int(cursor, "next_page", 1, 1)
-        pages_scanned = _cursor_int(cursor, "pages_scanned", page - 1)
-        empty_pages = _cursor_int(cursor, "empty_pages", 0)
-        previous = cursor.get("last_page_ids")
-        if previous is not None and (not isinstance(previous, list) or any(not isinstance(i, str) for i in previous)):
-            raise CollectionError("source_checkpoint_invalid")
-        previous_page_ids = tuple(previous) if previous is not None else None
-        if page != pages_scanned + 1:
-            raise CollectionError("source_checkpoint_invalid")
+        continuity = PageContinuity(cursor)
+        continuity.uid = uid
+        page, empty_pages = continuity.start_page, continuity.empty_pages
         if expected_uid is None:
             # Bind the task to the authenticated account before requesting or persisting any page.
             # If the process stops mid-page, the next attempt must verify the same account.
-            identity_cursor = {
-                **cursor, "uid": uid, "next_page": page, "pages_scanned": pages_scanned,
-                "empty_pages": empty_pages, "last_page_ids": list(previous_page_ids or ()),
-            }
-            yield DiscoveryBatch((), SourceCheckpoint(self.checkpoint_key, identity_cursor, False))
-        while pages_scanned < self.max_pages:
+            yield DiscoveryBatch((), SourceCheckpoint(
+                self.checkpoint_key,
+                continuity.cursor(continuity.frontier, empty_pages),
+                False,
+            ))
+        while page <= self.max_pages:
             await self.gate.wait()
             try:
                 data = await self.client.get_self_feed_page(self.feed_type, uid, page)
@@ -319,30 +315,6 @@ class SelfFeedSource:
             items = data["list"]
             total = data.get("total")
             known_total = total if self.feed_type == "favorite" and type(total) is int and total > 0 else None
-            pages_scanned += 1
-            if not items:
-                if data.get("has_more") is False:
-                    yield DiscoveryBatch((), SourceCheckpoint(
-                        self.checkpoint_key,
-                        {"uid": uid, "next_page": page + 1, "pages_scanned": pages_scanned,
-                         "empty_pages": empty_pages, "last_page_ids": list(previous_page_ids or ())},
-                        True,
-                    ), known_total, "has_more_false", self.feed_type == "favorite")
-                    return
-                empty_pages += 1
-                complete = empty_pages >= 2
-                yield DiscoveryBatch((), SourceCheckpoint(
-                    self.checkpoint_key,
-                    {"uid": uid, "next_page": page + 1, "pages_scanned": pages_scanned,
-                     "empty_pages": empty_pages, "last_page_ids": list(previous_page_ids or ())},
-                    complete,
-                ), known_total, "empty_pages" if complete else None, self.feed_type == "favorite")
-                if complete:
-                    return
-                page += 1
-                continue
-
-            empty_pages = 0
             ids = []
             posts = []
             page_seen = set()
@@ -358,15 +330,47 @@ class SelfFeedSource:
                     page_seen.add(note_id)
                     posts.append(post)
 
-            signature = tuple(ids)
-            if signature == previous_page_ids:
-                raise CollectionError("self_feed_page_repeated")
-            previous_page_ids = signature
+            continuity.validate_page_signature(page, ids, "self_feed_page_repeated")
+            if continuity.is_overlap_page(page):
+                continuity.observe_overlap(page, ids)
+                yield DiscoveryBatch(tuple(posts), checkpoint)
+                if page == continuity.replay_end:
+                    continuity.finish_overlap()
+                    yield DiscoveryBatch((), SourceCheckpoint(
+                        self.checkpoint_key,
+                        continuity.cursor(continuity.frontier, continuity.empty_pages),
+                        False,
+                    ))
+                page += 1
+                continue
+
+            if not items:
+                continuity.observe_forward(page, ids)
+                if data.get("has_more") is False:
+                    yield DiscoveryBatch((), SourceCheckpoint(
+                        self.checkpoint_key,
+                        continuity.cursor(page + 1, empty_pages, True),
+                        True,
+                    ), known_total, "has_more_false", self.feed_type == "favorite")
+                    return
+                empty_pages += 1
+                complete = empty_pages >= 2
+                yield DiscoveryBatch((), SourceCheckpoint(
+                    self.checkpoint_key,
+                    continuity.cursor(page + 1, empty_pages, complete),
+                    complete,
+                ), known_total, "empty_pages" if complete else None, self.feed_type == "favorite")
+                if complete:
+                    return
+                page += 1
+                continue
+
+            empty_pages = 0
+            continuity.observe_forward(page, ids)
             complete = data.get("has_more") is False
             yield DiscoveryBatch(tuple(posts), SourceCheckpoint(
                 self.checkpoint_key,
-                {"uid": uid, "next_page": page + 1, "pages_scanned": pages_scanned,
-                 "empty_pages": 0, "last_page_ids": list(signature)},
+                continuity.cursor(page + 1, empty_pages, complete),
                 complete,
             ), known_total, "has_more_false" if complete else None, self.feed_type == "favorite")
             if complete:

@@ -217,6 +217,7 @@ class ImageJobController:
                 "video": video, "audio": audio,
                 "comments": comments, "metrics": metrics,
                 "discovered": (job.report or {}).get("discovered"),
+                "source": (job.report or {}).get("source"),
                 "stop_reason": (job.report or {}).get("stop_reason"),
                 "capabilities": list(job.request.get("collect", {})),
                 "progress_capability": job.progress_capability,

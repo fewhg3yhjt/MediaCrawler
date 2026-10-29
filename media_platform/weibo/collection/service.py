@@ -20,12 +20,24 @@
 
 import asyncio
 import json
+from copy import deepcopy
 from dataclasses import dataclass, replace
 
 from pydantic import BaseModel
 
 from .models import CollectionError, CollectionResult, CrawlRequest, TaskExecutionError, ProgressEvent
 from .ports import Collector, PostSource, TaskRepository, ProgressObserver
+
+
+def _finalize_checkpoint_gaps(checkpoint):
+    cursor = deepcopy(checkpoint.cursor)
+    for event in cursor.get("page_drift", []):
+        pending = event.get("pending_ids") or []
+        if pending:
+            event["status"] = "unresolved"
+            event["unresolved_ids"] = pending
+            event["pending_ids"] = []
+    return replace(checkpoint, cursor=cursor, complete=True)
 
 
 def validate_capabilities(request: CrawlRequest, types: dict[str, type[BaseModel]]) -> dict[str, BaseModel]:
@@ -139,7 +151,9 @@ class TaskRunner:
                     next_checkpoint = batch.checkpoint
                     if (batch.known_total is not None and batch.known_total > 0
                             and len(seen) >= batch.known_total and not next_checkpoint.complete):
-                        next_checkpoint = replace(next_checkpoint, complete=True)
+                        next_checkpoint = _finalize_checkpoint_gaps(next_checkpoint)
+                    elif next_checkpoint.complete:
+                        next_checkpoint = _finalize_checkpoint_gaps(next_checkpoint)
                     if (next_checkpoint.complete and batch.completion_reason == "empty_pages"
                             and batch.require_total_on_empty_end and batch.known_total is not None
                             and len(seen) < batch.known_total):
