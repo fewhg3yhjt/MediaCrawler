@@ -152,7 +152,8 @@ def test_archive_and_detail_reuse_same_collector_without_detail_request(tmp_path
     collector, client, downloader, _ = setup_collector(tmp_path)
 
     async def execute():
-        posts = [post async for post in ArchiveSource(archive, "favorite", None).discover()]
+        batches = [batch async for batch in ArchiveSource(archive, "favorite", None).discover()]
+        posts = [post for batch in batches for post in batch.posts]
         return await collector.collect(posts[0], ImageOptions(download=True, include_retweeted=True), "missing")
 
     result = run(execute())

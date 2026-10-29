@@ -170,8 +170,9 @@ def test_refresh_policy_ignores_a_complete_archived_text_snapshot():
 
 
 async def _first(source):
-    async for post in source.discover():
-        return post
+    async for batch in source.discover():
+        if batch.posts:
+            return batch.posts[0]
     raise AssertionError("archive fixture was empty")
 
 
