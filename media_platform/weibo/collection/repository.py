@@ -31,7 +31,7 @@ from pathlib import Path
 
 from .models import (
     CollectionError, CollectionResult, DownloadedAsset, DownloadedFile, MediaAsset, ImageManifest, PostRef,
-    PostMetrics, PostText,
+    PostMetrics, PostText, SourceCheckpoint,
 )
 
 
@@ -49,6 +49,11 @@ class SqliteTaskRepository:
                 CREATE TABLE IF NOT EXISTS task_posts (
                     task_id TEXT NOT NULL, note_id TEXT NOT NULL, snapshot TEXT NOT NULL,
                     PRIMARY KEY (task_id, note_id)
+                );
+                CREATE TABLE IF NOT EXISTS source_checkpoints (
+                    task_id TEXT PRIMARY KEY, source_key TEXT NOT NULL,
+                    cursor TEXT NOT NULL, complete INTEGER NOT NULL DEFAULT 0,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
                 );
                 CREATE TABLE IF NOT EXISTS collection_items (
                     scope TEXT NOT NULL, collection TEXT NOT NULL, note_id TEXT NOT NULL,
@@ -114,6 +119,45 @@ class SqliteTaskRepository:
                 metrics = PostMetrics(**metrics)
             posts.append(PostRef(item["note_id"], manifest, text, metrics))
         return posts
+
+    def source_checkpoint(self, task_id: str, source_key: str) -> SourceCheckpoint | None:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT source_key,cursor,complete FROM source_checkpoints WHERE task_id=?",
+                (task_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        if row[0] != source_key:
+            raise ValueError("source checkpoint does not match the task source")
+        try:
+            cursor = json.loads(row[1])
+        except (ValueError, TypeError) as exc:
+            raise CollectionError("source_checkpoint_invalid") from exc
+        if not isinstance(cursor, dict):
+            raise CollectionError("source_checkpoint_invalid")
+        return SourceCheckpoint(row[0], cursor, bool(row[2]))
+
+    def save_source_checkpoint(self, task_id: str, checkpoint: SourceCheckpoint) -> None:
+        if not checkpoint.source_key or not isinstance(checkpoint.cursor, dict):
+            raise CollectionError("source_checkpoint_invalid")
+        encoded = json.dumps(checkpoint.cursor, sort_keys=True, ensure_ascii=False)
+        with self._connect() as db:
+            task = db.execute("SELECT 1 FROM tasks WHERE id=?", (task_id,)).fetchone()
+            if task is None:
+                raise ValueError("unknown task")
+            current = db.execute(
+                "SELECT source_key,complete FROM source_checkpoints WHERE task_id=?", (task_id,),
+            ).fetchone()
+            if current is not None and current[0] != checkpoint.source_key:
+                raise ValueError("source checkpoint does not match the task source")
+            if current is not None and current[1] and not checkpoint.complete:
+                raise ValueError("completed source checkpoint cannot move backwards")
+            db.execute("""INSERT INTO source_checkpoints(task_id,source_key,cursor,complete,updated_at)
+                VALUES(?,?,?,?,CURRENT_TIMESTAMP)
+                ON CONFLICT(task_id) DO UPDATE SET source_key=excluded.source_key,
+                    cursor=excluded.cursor,complete=excluded.complete,updated_at=CURRENT_TIMESTAMP""",
+                (task_id, checkpoint.source_key, encoded, int(checkpoint.complete)))
 
     def completed(self, task_id: str, post: PostRef, capability: str) -> bool:
         with self._connect() as db:

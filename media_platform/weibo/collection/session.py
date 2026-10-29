@@ -214,6 +214,10 @@ def decode_self_feed_page(status: int, url: str, payload: dict | None, feed_type
             raise CollectionError("invalid_self_feed_page") from exc
         if total >= 0:
             result["total"] = total
+    if isinstance(data.get("has_more"), bool):
+        result["has_more"] = data["has_more"]
+    elif not items and result.get("total") == 0:
+        result["has_more"] = False
     return result
 
 

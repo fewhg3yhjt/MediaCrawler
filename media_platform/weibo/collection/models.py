@@ -159,6 +159,26 @@ class PostRef:
 
 
 @dataclass(frozen=True)
+class SourceCheckpoint:
+    """Durable position after a fully processed source batch."""
+
+    source_key: str
+    cursor: dict
+    complete: bool = False
+
+
+@dataclass(frozen=True)
+class DiscoveryBatch:
+    """One source page and the checkpoint that becomes safe after processing it."""
+
+    posts: tuple[PostRef, ...]
+    checkpoint: SourceCheckpoint
+    known_total: int | None = None
+    completion_reason: str | None = None
+    require_total_on_empty_end: bool = False
+
+
+@dataclass(frozen=True)
 class PostText:
     note_id: str
     text: str

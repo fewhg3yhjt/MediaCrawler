@@ -20,7 +20,7 @@
 
 import asyncio
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from pydantic import BaseModel
 
@@ -106,21 +106,52 @@ class TaskRunner:
                 self.repository.record(task_id, post, step.collector.name, step.options.model_dump_json(), result)
 
         try:
+            checkpoint = self.repository.source_checkpoint(task_id, source.checkpoint_key)
+            await source.validate_checkpoint(checkpoint)
             seen = set()
             # Durable discovered work is processed before replaying the source.
             for post in self.repository.pending(task_id):
                 seen.add(post.note_id)
                 await collect(post)
             stop_reason = "source_exhausted"
-            async for post in source.discover():
-                if post.note_id in seen:
-                    continue
-                if len(seen) >= plan.max_posts:
-                    stop_reason = "limit_reached"
-                    break
-                self.repository.discover(task_id, post)
-                seen.add(post.note_id)
-                await collect(post)
+            if checkpoint is None or not checkpoint.complete:
+                async for batch in source.discover(checkpoint):
+                    if batch.checkpoint.source_key != source.checkpoint_key:
+                        raise CollectionError("source_checkpoint_mismatch")
+                    new_posts = []
+                    limit_reached = False
+                    # Persist the page's eligible work before capability calls. If interrupted,
+                    # pending work is recoverable and the old page cursor safely replays this page.
+                    for post in batch.posts:
+                        if post.note_id in seen:
+                            continue
+                        if len(seen) >= plan.max_posts:
+                            stop_reason = "limit_reached"
+                            limit_reached = True
+                            break
+                        self.repository.discover(task_id, post)
+                        seen.add(post.note_id)
+                        new_posts.append(post)
+                    for post in new_posts:
+                        await collect(post)
+                    if limit_reached:
+                        break
+                    next_checkpoint = batch.checkpoint
+                    if (batch.known_total is not None and batch.known_total > 0
+                            and len(seen) >= batch.known_total and not next_checkpoint.complete):
+                        next_checkpoint = replace(next_checkpoint, complete=True)
+                    if (next_checkpoint.complete and batch.completion_reason == "empty_pages"
+                            and batch.require_total_on_empty_end and batch.known_total is not None
+                            and len(seen) < batch.known_total):
+                        raise CollectionError("empty_self_feed_page_unverified")
+                    # A cursor is safe only once every discovered item in its page is durable
+                    # and its selected capabilities have finished or recorded their failures.
+                    self.repository.save_source_checkpoint(task_id, next_checkpoint)
+                    checkpoint = next_checkpoint
+                    if checkpoint.complete:
+                        break
+            if checkpoint is not None and checkpoint.complete:
+                stop_reason = "source_exhausted"
             report = self.repository.report(task_id)
             incomplete = any(item["status"] not in ("succeeded", "no_content") for item in report["capabilities"])
             incomplete = incomplete or stop_reason == "limit_reached"
