@@ -29,8 +29,6 @@ import sys
 from typing import Optional
 
 from playwright.async_api import BrowserContext, Page
-from tenacity import (RetryError, retry, retry_if_result, stop_after_attempt,
-                      wait_fixed)
 
 import config
 from base.base_crawler import AbstractLogin
@@ -66,20 +64,21 @@ class WeiboLogin(AbstractLogin):
                 "[WeiboLogin.begin] Invalid Login Type Currently only supported qrcode or phone or cookie ...")
 
 
-    @retry(stop=stop_after_attempt(600), wait=wait_fixed(1), retry=retry_if_result(lambda value: value is False))
     async def check_login_state(self, no_logged_in_session: str) -> bool:
         """
-            Check if the current login status is successful and return True otherwise return False
-            retry decorator will retry 20 times if the return value is False, and the retry interval is 1 second
-            if max retry times reached, raise RetryError
+            Check if the current login status is successful, return True on success
+            Polls every 1 second for up to 120 seconds (avoids hanging for a long time)
         """
-        current_cookie = await self.browser_context.cookies()
-        _, cookie_dict = utils.convert_cookies(current_cookie)
-        if cookie_dict.get("SSOLoginState"):
-            return True
-        current_web_session = cookie_dict.get("WBPSESS")
-        if current_web_session != no_logged_in_session:
-            return True
+        for _ in range(120):
+            current_cookie = await self.browser_context.cookies()
+            _, cookie_dict = utils.convert_cookies(current_cookie)
+            if cookie_dict.get("SSOLoginState"):
+                return True
+            if cookie_dict.get("WBPSESS") != no_logged_in_session:
+                return True
+            utils.logger.info("[WeiboLogin.check_login_state] 等待扫码登录确认中... (最多120秒)")
+            await asyncio.sleep(1)
+        utils.logger.error("[WeiboLogin.check_login_state] 扫码登录超时，未检测到登录态")
         return False
 
     async def login_by_qrcode(self):
@@ -100,18 +99,17 @@ class WeiboLogin(AbstractLogin):
         partial_show_qrcode = functools.partial(utils.show_qrcode, base64_qrcode_img)
         asyncio.get_running_loop().run_in_executor(executor=None, func=partial_show_qrcode)
 
-        utils.logger.info(f"[WeiboLogin.login_by_qrcode] Waiting for scan code login, remaining time is 20s")
+        utils.logger.info(f"[WeiboLogin.login_by_qrcode] Waiting for scan code login, remaining time is 120s")
 
         # get not logged session
         current_cookie = await self.browser_context.cookies()
         _, cookie_dict = utils.convert_cookies(current_cookie)
         no_logged_in_session = cookie_dict.get("WBPSESS")
 
-        try:
-            await self.check_login_state(no_logged_in_session)
-        except RetryError:
+        login_ok = await self.check_login_state(no_logged_in_session)
+        if not login_ok:
             utils.logger.info("[WeiboLogin.login_by_qrcode] Login weibo failed by qrcode login method ...")
-            sys.exit()
+            sys.exit(1)
 
         wait_redirect_seconds = 5
         utils.logger.info(

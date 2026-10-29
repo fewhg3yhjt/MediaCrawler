@@ -22,6 +22,16 @@
 # @Author  : relakkes@gmail.com
 # @Time    : 2023/12/23 15:40
 # @Desc    :
-from .client import WeiboClient
-from .core import WeiboCrawler
-from .login import WeiboLogin
+from importlib import import_module
+
+__all__ = ["WeiboClient", "WeiboCrawler", "WeiboLogin"]
+
+
+def __getattr__(name):
+    # Domain modules must not initialize browser/database dependencies on import.
+    modules = {"WeiboClient": ".client", "WeiboCrawler": ".core", "WeiboLogin": ".login"}
+    if name not in modules:
+        raise AttributeError(name)
+    value = getattr(import_module(modules[name], __name__), name)
+    globals()[name] = value
+    return value

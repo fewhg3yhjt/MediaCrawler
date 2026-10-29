@@ -134,7 +134,14 @@ uv run main.py --platform xhs --lt qrcode --type detail
 
 # 其他平台爬虫使用示例，执行下面的命令查看
 uv run main.py --help
+
+# 微博导出当前账号收藏微博（如接口未命中，会在浏览器里录制真实请求并缓存）
+uv run main.py --platform wb --lt qrcode --type favorite --save_data_option jsonl
+
+# 微博导出当前账号点赞微博
+uv run main.py --platform wb --lt qrcode --type liked --save_data_option jsonl
 ```
+
 
 <details>
 <summary>🖥️ <strong>WebUI 可视化操作界面</strong></summary>

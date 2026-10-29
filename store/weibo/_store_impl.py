@@ -24,10 +24,11 @@
 # @Desc    : Weibo storage implementation class
 import asyncio
 import csv
+import glob
 import json
 import os
 import pathlib
-from typing import Dict
+from typing import Dict, Set
 
 import aiofiles
 from sqlalchemy import select
@@ -230,9 +231,58 @@ class WeiboJsonlStoreImplement(AbstractStore):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.writer = AsyncFileWriter(platform="weibo", crawler_type=crawler_type_var.get())
+        self._saved_ids: Set = None
+
+    async def _load_saved_ids(self) -> Set:
+        """从已有 jsonl 中加载已保存的 note_id，用于去重（增量边界页不重复写）。"""
+        if self._saved_ids is None:
+            ids: Set = set()
+            if config.SAVE_DATA_PATH:
+                base = os.path.join(config.SAVE_DATA_PATH, "weibo", "jsonl")
+            else:
+                base = os.path.join("data", "weibo", "jsonl")
+            if os.path.isdir(base):
+                for path in glob.glob(os.path.join(base, "*contents*.jsonl")):
+                    try:
+                        with open(path, encoding="utf-8") as f:
+                            for line in f:
+                                line = line.strip()
+                                if not line:
+                                    continue
+                                try:
+                                    # 统一转 str，避免 int/str 类型不一致导致去重误判
+                                    ids.add(str(json.loads(line).get("note_id")))
+                                except Exception:
+                                    continue
+                    except Exception:
+                        continue
+            self._saved_ids = ids
+        return self._saved_ids
 
     async def store_content(self, content_item: Dict):
+        saved = await self._load_saved_ids()
+        note_id = str(content_item.get("note_id"))
+        if note_id in saved:
+            # 已存记录按策略处理：skip 跳过；refresh/full-update 缓冲，由 flush_content_updates() 批量落盘
+            from . import get_save_policy, buffer_content_update
+            policy = get_save_policy()
+            if policy == "refresh":
+                buffer_content_update(
+                    note_id,
+                    "merge",
+                    {
+                        "liked_count": content_item.get("liked_count"),
+                        "comments_count": content_item.get("comments_count"),
+                        "shared_count": content_item.get("shared_count"),
+                        "last_modify_ts": content_item.get("last_modify_ts"),
+                        "last_seen_ts": content_item.get("last_seen_ts"),
+                    },
+                )
+            elif policy == "full-update":
+                buffer_content_update(note_id, "replace", content_item)
+            return
         await self.writer.write_to_jsonl(item_type="contents", item=content_item)
+        saved.add(note_id)
 
     async def store_comment(self, comment_item: Dict):
         await self.writer.write_to_jsonl(item_type="comments", item=comment_item)

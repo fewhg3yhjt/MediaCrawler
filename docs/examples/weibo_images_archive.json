@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "source": {
+    "type": "archive",
+    "collection": "favorite"
+  },
+  "collect": {
+    "images": {
+      "download": false,
+      "include_retweeted": false,
+      "verify_manifest": false
+    }
+  },
+  "limits": {"max_posts": 20}
+}

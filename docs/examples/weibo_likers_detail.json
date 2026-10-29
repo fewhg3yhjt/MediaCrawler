@@ -1,0 +1,14 @@
+{
+  "source": {
+    "type": "detail",
+    "note_ids": ["<微博链接或ID>"]
+  },
+  "collect": {
+    "likers": {
+      "max_count": 100
+    }
+  },
+  "update": {
+    "default": "missing"
+  }
+}

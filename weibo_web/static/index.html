@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>微博世界</title>
+<style>
+:root{
+  --bg:#f5f6f8; --card:#fff; --line:#e6e8eb; --text:#1f2329; --muted:#8a919f;
+  --accent:#e2492d; --accent2:#ff8200; --chip:#f2f3f5; --hover:#fafbfc;
+  --bar:#1f2329; --bar-text:#fff; --ok:#2ea121; --warn:#e6a700; --side:#fbfbfc;
+}
+html[data-theme="dark"]{
+  --bg:#14161a; --card:#1d2026; --line:#2c313a; --text:#e7eaef; --muted:#8b93a1;
+  --accent:#ff6b4a; --accent2:#ff9a3d; --chip:#262b33; --hover:#242932;
+  --bar:#101216; --bar-text:#e7eaef; --ok:#4caf50; --warn:#f0b429; --side:#181b20;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.7 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+a{color:var(--accent);text-decoration:none}
+header{position:sticky;top:0;z-index:20;background:var(--bar);color:var(--bar-text);padding:8px 18px;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+.top{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+h1{font-size:16px;margin:0;font-weight:600}
+.mode-tabs{display:flex;gap:6px;margin-top:8px}
+.mode-tabs .m{ padding:4px 14px;border-radius:6px;cursor:pointer;font-size:13px;background:rgba(255,255,255,.08)}
+.mode-tabs .m.active{background:var(--accent2);color:#fff;font-weight:600}
+.mode-tabs .m:hover{background:rgba(255,255,255,.18)}
+main{max-width:1100px;margin:0 auto;padding:0 0 60px}
+.mode-view{display:flex;min-height:calc(100vh - 90px)}
+/* 侧栏 */
+#sidebar{width:210px;flex-shrink:0;background:var(--side);border-right:1px solid var(--line);
+  padding:10px 8px;overflow-y:auto;position:sticky;top:90px;height:calc(100vh - 90px);transition:width .15s}
+#sidebar.collapsed{width:46px;padding:10px 4px}
+#sidebar.collapsed .sgroup-title,#sidebar.collapsed .sitem span,#sidebar.collapsed .tree-label{display:none}
+.sgroup-title{font-size:11px;color:var(--muted);text-transform:uppercase;margin:12px 6px 4px;letter-spacing:.5px}
+.sitem{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;white-space:nowrap;overflow:hidden;font-size:13px}
+.sitem:hover{background:var(--hover)}
+.sitem.active{background:var(--chip);color:var(--accent);font-weight:600}
+.sitem .n{margin-left:auto;font-size:11px;color:var(--muted)}
+.sitem .ic{font-size:14px;flex-shrink:0}
+.sitem .ic.sm{font-size:11px;width:16px;text-align:center}
+/* 时间树 */
+.tree{margin-top:4px}
+.tree .yrow{display:flex;align-items:center;gap:4px;padding:4px 8px;border-radius:6px;cursor:pointer;font-size:12.5px;white-space:nowrap}
+.tree .yrow:hover{background:var(--hover)}
+.tree .yrow .n{margin-left:auto;font-size:11px;color:var(--muted)}
+.tree .yrow.open .arrow{transform:rotate(90deg)}
+.tree .arrow{display:inline-block;transition:transform .15s;font-size:10px;width:12px}
+.tree .mrow{padding:3px 8px 3px 26px;cursor:pointer;font-size:12px;color:var(--muted);border-radius:6px;white-space:nowrap}
+.tree .mrow:hover{color:var(--text);background:var(--hover)}
+.tree .mrow.active{color:var(--accent);font-weight:600}
+/* 内容 */
+.content{flex:1;padding:14px 16px;min-width:0}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+#q{flex:1;min-width:180px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);font-size:14px;outline:none}
+#q:focus{border-color:var(--accent)}
+select,input[type=text]{padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text)}
+.stat-line{display:flex;gap:18px;flex-wrap:wrap;color:var(--muted);font-size:13px;margin-bottom:10px}
+.stat-line b{color:var(--text)}
+.month{font-size:15px;font-weight:700;margin:20px 0 8px;padding-left:10px;border-left:3px solid var(--accent)}
+.month small{font-weight:400;color:var(--muted);margin-left:6px;font-size:12px}
+.post{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:8px 0;cursor:pointer;transition:background .15s}
+.post:hover{background:var(--hover)}
+.post-head{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px;margin-bottom:6px}
+.post-head .who{color:var(--text);font-weight:600}
+.post-content{white-space:pre-wrap;word-break:break-word;margin:0 0 6px}
+.post-foot{display:flex;gap:14px;color:var(--muted);font-size:12px}
+.tag{font-size:11px;padding:1px 7px;border-radius:999px;background:var(--chip);color:var(--muted)}
+.tag.rt{background:rgba(226,73,45,.12);color:var(--accent)}
+.tag.del{background:rgba(230,167,0,.16);color:#b06a00;cursor:help}
+select.multisel{min-width:150px;min-height:90px;padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text)}
+textarea.nidbox{width:100%;min-height:70px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);font:12px Consolas,monospace;resize:vertical}
+#more{display:block;margin:14px auto;padding:8px 24px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);cursor:pointer}
+#more:disabled{opacity:.5}
+/* 弹窗 */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:none;align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto}
+.overlay.open{display:flex}
+.modal{background:var(--card);border-radius:12px;max-width:640px;width:100%;padding:20px;position:relative}
+.modal .close{position:absolute;top:10px;right:14px;font-size:20px;cursor:pointer;color:var(--muted);background:none;border:none}
+.modal .full{white-space:pre-wrap;word-break:break-word;font-size:15px;line-height:1.8}
+.modal .imgs{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;margin-top:10px}
+.modal .imgs img{width:100%;border-radius:8px;border:1px solid var(--line)}
+/* 人脉/管理台 */
+.manage{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:12px 0}
+.manage h2{font-size:15px;margin:0 0 10px}
+.task-row{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)}
+.task-row:last-child{border-bottom:none}
+.task-dot{width:9px;height:9px;border-radius:50%;background:var(--muted);flex-shrink:0}
+.task-dot.on{background:var(--ok)}
+.btn{padding:6px 14px;border:none;border-radius:8px;cursor:pointer;font-size:13px;background:var(--chip);color:var(--text)}
+.btn.primary{background:var(--accent);color:#fff}
+.btn.danger{background:rgba(226,73,45,.15);color:var(--accent)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.logbox{background:#0f1115;color:#9fe3a0;border-radius:8px;padding:10px;font:12px/1.6 Consolas,monospace;height:160px;overflow-y:auto;margin-top:8px;white-space:pre-wrap}
+.wide{max-width:880px;margin:0 auto;padding:10px 16px}
+footer{color:var(--muted);font-size:12px;text-align:center;padding:16px}
+/* 统计卡 */
+.stat-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:12px 0}
+.scard{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.scard .n{font-size:22px;font-weight:700}
+.scard .l{font-size:12px;color:var(--muted);margin-top:2px}
+.scard.hl{border-color:var(--accent2)}
+.scard.hl .n{color:var(--accent2)}
+/* 用户卡片网格 */
+.filtertabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
+.filtertabs .f{padding:5px 12px;border-radius:999px;cursor:pointer;font-size:12.5px;background:var(--chip);color:var(--muted)}
+.filtertabs .f.active{background:var(--accent2);color:#fff;font-weight:600}
+.usergrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+.ucard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;gap:10px;cursor:pointer;transition:box-shadow .15s}
+.ucard:hover{box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.ucard.tracked{border-color:var(--accent2)}
+.ucard img{width:42px;height:42px;border-radius:50%;flex-shrink:0;background:var(--chip)}
+.ucard .info{min-width:0;flex:1}
+.ucard .name{font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ucard .desc{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:2px 0 6px}
+.badge{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;margin-right:4px}
+.badge.mutual{background:rgba(255,130,0,.15);color:#b06a00}
+.badge.following{background:rgba(37,99,235,.12);color:#2563eb}
+.badge.follower{background:rgba(46,161,33,.12);color:var(--ok)}
+.badge.tracked{background:rgba(226,73,45,.14);color:var(--accent)}
+.ucard .meta{font-size:11px;color:var(--muted)}
+/* 进度条 */
+.progress{height:6px;background:var(--chip);border-radius:3px;overflow:hidden;flex:1;min-width:80px}
+.progress .bar{height:100%;background:var(--accent);border-radius:3px;transition:width .5s}
+.progress .bar.done{background:var(--ok)}
+/* 密集表格 */
+table.ptable{width:100%;border-collapse:collapse;font-size:13px}
+table.ptable th{text-align:left;color:var(--muted);font-weight:600;font-size:11.5px;padding:6px 8px;border-bottom:1px solid var(--line)}
+table.ptable td{padding:7px 8px;border-bottom:1px solid var(--line)}
+table.ptable tr:hover td{background:var(--hover)}
+.task-block{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:12px 0}
+.task-block h2{font-size:14px;margin:0 0 8px}
+@media (max-width:800px){ #sidebar{position:fixed;left:0;top:90px;z-index:30} #sidebar.collapsed{width:46px} }
+</style>
+</head>
+<body>
+<header>
+  <div class="top">
+    <h1>📦 微博世界</h1>
+    <span id="globalCount" style="font-size:12px;opacity:.85"></span>
+    <button class="btn" style="margin-left:auto;color:var(--bar-text);background:rgba(255,255,255,.1)" id="themeBtn">🌓</button>
+  </div>
+  <div class="mode-tabs" id="modeTabs">
+    <span class="m active" data-mode="timeline">🕐 时间线</span>
+    <span class="m" data-mode="social">👥 人脉</span>
+    <span class="m" data-mode="console">🛠 管理台</span>
+  </div>
+</header>
+<main>
+  <div id="timelineView" class="mode-view">
+    <aside id="sidebar">
+      <div class="sitem" id="sideToggle" title="折叠/展开"><span class="ic">◧</span><span>折叠</span></div>
+      <div id="sideMe"></div>
+      <div id="sideWorld"></div>
+      <div id="sideTime"></div>
+    </aside>
+    <div class="content">
+      <div class="filters">
+        <input id="q" type="search" placeholder="搜索正文/作者…">
+        <select id="availSel" title="源端状态筛选">
+          <option value="">全部状态</option>
+          <option value="ok">仅正常</option>
+          <option value="deleted">仅源端已删</option>
+        </select>
+        <button class="btn primary" id="searchBtn">搜索</button>
+        <span id="curTitle" style="font-size:13px;color:var(--muted);align-self:center"></span>
+      </div>
+      <div class="stat-line" id="statLine"></div>
+      <div id="list"></div>
+      <button id="more" style="display:none">加载更多</button>
+    </div>
+  </div>
+  <div id="socialView" class="mode-view" style="display:none"><div class="wide" style="flex:1" id="socialInner"></div></div>
+  <div id="consoleView" class="mode-view" style="display:none"><div class="wide" style="flex:1" id="consoleInner"></div></div>
+</main>
+<footer>微博世界 · 我与世界的观测</footer>
+<div class="overlay" id="overlay"><div class="modal" id="modal"></div></div>
+<div class="overlay" id="imgOverlay" style="align-items:center;justify-content:center;padding:20px;cursor:zoom-out"><img id="imgBig" style="max-width:94vw;max-height:92vh;border-radius:8px;box-shadow:0 4px 30px rgba(0,0,0,.5)"></div>
+
+<script>
+"use strict";
+let mode = "timeline";      // timeline | social | console
+let cur = "creator";        // favorite | liked | creator | user_{id}
+let curLabel = "tombkeeper";
+let offset = 0, pageSize = 20, totalPosts = 0;
+let yearFilter = "", availFilter = "";
+const __TK__ = "1401527553"; // 主归档用户（tombkeeper）
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s==null?"":s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+// ---- 模式切换 ----
+function switchMode(m){
+  mode = m;
+  document.querySelectorAll(".mode-tabs .m").forEach(x=>x.classList.toggle("active", x.dataset.mode===m));
+  $("#timelineView").style.display = m==="timeline" ? "" : "none";
+  $("#socialView").style.display = m==="social" ? "" : "none";
+  $("#consoleView").style.display = m==="console" ? "" : "none";
+  if(m==="timeline"){ loadMeta(); loadPosts(); loadStats(); }
+  if(m==="social") loadSocial();
+  if(m==="console") loadConsole();
+}
+document.querySelectorAll(".mode-tabs .m").forEach(x=>x.onclick=()=>switchMode(x.dataset.mode));
+
+// ---- 侧栏 ----
+function initSidebar(){
+  $("#sideToggle").onclick = ()=>{
+    const sb = $("#sidebar");
+    sb.classList.toggle("collapsed");
+    const c = sb.classList.contains("collapsed");
+    $("#sideToggle").querySelector("span:last-child").textContent = c ? "展开" : "折叠";
+  };
+}
+function renderSidebar(meta){
+  const me = $("#sideMe"), world = $("#sideWorld");
+  me.innerHTML = '<div class="sgroup-title">我</div>';
+  const items = [
+    {key:"favorite", ic:"♥", name:"我的收藏", n:meta.collections.favorite.count},
+    {key:"liked", ic:"👍", name:"我的赞过", n:meta.collections.liked.count},
+  ];
+  items.forEach(it=>{
+    const el = document.createElement("div");
+    el.className = "sitem"+(cur===it.key?" active":"");
+    el.innerHTML = '<span class="ic">'+it.ic+'</span><span>'+it.name+'</span><span class="n">'+it.n+'</span>';
+    el.onclick = ()=>switchSource(it.key, it.name);
+    me.appendChild(el);
+  });
+  world.innerHTML = '<div class="sgroup-title">世界 · 观测的博主</div>';
+  const users = [
+    {key:"creator", name:"tombkeeper", n:meta.collections.creator.count, ic:"👤"},
+    ...(meta.tracked||[]).map(t=>({key:t.key, name:t.screen_name, n:t.count, ic:"👤"})),
+  ];
+  if(!users.length) world.innerHTML += '<div class="sitem" style="color:var(--muted);font-size:12px">（无观测对象）</div>';
+  users.forEach(u=>{
+    const el = document.createElement("div");
+    el.className = "sitem"+(cur===u.key?" active":"");
+    el.innerHTML = '<span class="ic">'+u.ic+'</span><span>'+esc(u.name)+'</span><span class="n">'+u.n+'</span>';
+    el.onclick = ()=>switchSource(u.key, u.name);
+    world.appendChild(el);
+  });
+}
+
+function switchSource(key, label){
+  cur = key; curLabel = label;
+  offset = 0; yearFilter = "";
+  $("#curTitle").textContent = label;
+  document.querySelectorAll(".sitem").forEach(s=>s.classList.remove("active"));
+  renderSidebarLastActive();
+  loadPosts(); loadStats();
+  renderTimeTree();
+}
+function renderSidebarLastActive(){
+  document.querySelectorAll("#sideMe .sitem,#sideWorld .sitem").forEach(s=>{
+    s.classList.toggle("active", s.textContent.includes(curLabel));
+  });
+}
+
+// ---- 时间树 ----
+async function renderTimeTree(){
+  const box = $("#sideTime");
+  box.innerHTML = '<div class="sgroup-title">时间</div>';
+  const d = await (await fetch(`/api/stats?collection=${cur}`)).json();
+  const years = Object.entries(d.years||{}).sort((a,b)=>b[0]-a[0]);
+  const tree = document.createElement("div"); tree.className="tree";
+  years.forEach(([y,n])=>{
+    const row = document.createElement("div");
+    row.className = "yrow"+(yearFilter===y?" open":"");
+    row.innerHTML = '<span class="arrow">▶</span>'+y+'年 <span class="n">'+n+'</span>';
+    row.onclick = (e)=>{
+      if(yearFilter===y){ yearFilter=""; } else { yearFilter=y; }
+      offset=0; loadPosts(); renderTimeTree();
+    };
+    tree.appendChild(row);
+  });
+  box.appendChild(tree);
+}
+
+// ---- 列表 ----
+async function loadPosts(append=false){
+  const q = $("#q").value.trim();
+  const url = `/api/posts?collection=${cur}&q=${encodeURIComponent(q)}&year=${yearFilter}&avail=${availFilter}&offset=${offset}&limit=${pageSize}`;
+  const d = await (await fetch(url)).json();
+  totalPosts = d.total;
+  const list = $("#list");
+  const groups = {};
+  d.posts.forEach(p=>{ const ym=(p.dt||"????").slice(0,7)||"未知"; (groups[ym]=groups[ym]||[]).push(p); });
+  if(!append) list.innerHTML = "";
+  Object.keys(groups).sort().reverse().forEach(ym=>{
+    if(append && document.querySelector(`[data-ym="${ym}"]`)) return;
+    const month = document.createElement("div");
+    month.className = "month";
+    const [y,m] = ym.split("-");
+    month.innerHTML = (y||"")+'年'+(m?(' '+parseInt(m)+'月'):"")+' <small>'+groups[ym].length+' 条</small>';
+    list.appendChild(month);
+    groups[ym].forEach(p=>list.appendChild(makePost(p)));
+  });
+  $("#more").style.display = (offset+pageSize<totalPosts) ? "block" : "none";
+  $("#more").disabled = false;
+}
+function makePost(p){
+  const box=document.createElement("div"); box.className="post";
+  const head=document.createElement("div"); head.className="post-head";
+  const delTag = p.av==="deleted_on_source" ? '<span class="tag del" title="源端已删/被封，本地仍保留存档">源端已删</span>' : "";
+  head.innerHTML='<span class="who">'+esc(p.nick||"未知")+'</span><span>'+esc(p.dt)+'</span>'+(p.ip?('<span>'+esc(p.ip)+'</span>'):"")+(p.rt==="1"?'<span class="tag rt">转发</span>':"")+delTag;
+  const body=document.createElement("div"); body.className="post-content";
+  body.textContent = p.c.length>160 ? p.c.slice(0,160)+"…" : p.c;
+  const foot=document.createElement("div"); foot.className="post-foot";
+  foot.innerHTML='<span>赞 '+p.l+'</span><span>评论 '+p.cc+'</span><span>转发 '+p.sh+'</span>';
+  box.append(head,body,foot);
+  box.onclick=()=>showDetail(p);
+  return box;
+}
+function showDetail(p){
+  const m=$("#modal");
+  m.innerHTML='<button class="close">✕</button>'+
+    '<div style="color:var(--muted);font-size:12px;margin-bottom:8px"><b style="color:var(--text)">'+esc(p.nick||"未知")+'</b> · '+esc(p.dt)+(p.ip?(' · '+esc(p.ip)):"")+(p.rt==="1"?' <span class="tag rt">转发</span>':"")+'</div>'+
+    '<div class="full">'+esc(p.c)+'</div>'+
+    (p.imgs&&p.imgs.length?('<div class="imgs">'+p.imgs.map(u=>'<div style="cursor:zoom-in" onclick="event.stopPropagation();showBigImage(\''+esc(u).replace(/'/g,"\\'")+'\')"><img loading="lazy" src="/api/img?url='+encodeURIComponent(u)+'"></div>').join("")+'</div>'):"")+
+    '<div id="rtOrigin" style="margin-top:12px"></div>'+
+    '<div style="margin-top:12px;color:var(--muted);font-size:12px">赞 '+p.l+' · 评论 '+p.cc+' · 转发 '+p.sh+(p.url?' · <a href="'+esc(p.url)+'" target="_blank">原文 ↗</a>':"")+'</div>'+
+    (p.av==="deleted_on_source" ? '<div style="margin-top:10px;font-size:12px;color:#b06a00">⚠ 源端已删/被封，本存档由爬取时保留。'+
+      '<button class="btn" id="restoreBtn" style="margin-left:8px">标记为正常（源端可见）</button></div>' : "");
+  $("#overlay").classList.add("open");
+  m.querySelector(".close").onclick=closeDetail;
+  const rb=m.querySelector("#restoreBtn");
+  if(rb) rb.onclick=async()=>{
+    const r=await (await fetch("/api/transfer/flag",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({note_ids:[p.id],status:"ok"})})).json();
+    alert(r.ok?("已恢复 "+(r.marked||0)+" 条为正常"):(r.msg||"失败"));
+    loadPosts();
+  };
+  // 转发 → 内嵌显示原文（rt_* 字段）
+  if(p.rt==="1" && p.rtc){
+    const box=m.querySelector("#rtOrigin");
+    box.innerHTML='<div style="color:var(--muted);font-size:12px;margin-bottom:4px">▼ 转发的原文</div>'+
+      '<div style="border-left:3px solid var(--accent);padding:8px 10px;background:var(--chip);border-radius:8px">'+
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:4px"><b style="color:var(--text)">'+esc(p.rtn||"未知")+'</b> · '+esc(p.rtt)+'</div>'+
+      '<div class="full" style="font-size:13px">'+esc(p.rtc)+'</div>'+
+      ((p.rtimgs&&p.rtimgs.length)?('<div class="imgs" style="margin-top:6px">'+p.rtimgs.map(u=>'<div style="cursor:zoom-in" onclick="event.stopPropagation();showBigImage(\''+esc(u).replace(/'/g,"\\'")+'\')"><img loading="lazy" src="/api/img?url='+encodeURIComponent(u)+'"></div>').join("")+'</div>'):"")+
+      '</div>';
+  }
+}
+function closeDetail(){ $("#overlay").classList.remove("open"); }
+$("#overlay").onclick=e=>{ if(e.target.id==="overlay") closeDetail(); };
+
+// 图片大图查看（走代理 + large 尺寸）
+function largeImgUrl(u){ return u.replace(/\/(mw\d+|orj\d+|thumb\d+|large|bmiddle|original)\//, "/large/"); }
+function showBigImage(u){
+  const big = $("#imgBig");
+  big.src = "/api/img?url=" + encodeURIComponent(largeImgUrl(u));
+  $("#imgOverlay").classList.add("open");
+}
+$("#imgOverlay").onclick = ()=> $("#imgOverlay").classList.remove("open");
+
+// ---- 统计 ----
+async function loadStats(){
+  const d=await (await fetch(`/api/stats?collection=${cur}`)).json();
+  $("#statLine").innerHTML='共 <b>'+d.total.toLocaleString()+'</b> 条 · '+esc(d.first||"")+' ~ '+esc(d.last||"")+(yearFilter?' · 当前年份 '+yearFilter:'');
+}
+
+// ---- Meta / 侧栏 ----
+async function loadMeta(){
+  const m = await (await fetch("/api/meta")).json();
+  try { const tc = await (await fetch("/api/social/tracked_collections")).json(); m.tracked = tc; } catch(e){ m.tracked=[]; }
+  const total = Object.values(m.collections).reduce((s,x)=>s+x.count,0);
+  $("#globalCount").textContent = "共 "+total.toLocaleString()+" 条";
+  renderSidebar(m);
+}
+
+// ===== 数据迁移（多机协作合并） =====
+async function renderConTransfer(){
+  const o=await (await fetch("/api/transfer/options")).json();
+  const box=$("#conTransfer");
+  box.innerHTML =
+    '<div class="task-block"><h2>🔄 数据迁移（多机协作合并）</h2>'+
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">源端已删存档 <b style="color:#b06a00">'+(o.deleted_count||0)+'</b> 条 · 当前重复爬取策略 '+esc(o.save_policy||"skip")+'（环境变量 WEIBO_SAVE_POLICY=refresh/full-update 可覆盖）</div>'+
+    '<div style="display:flex;gap:16px;flex-wrap:wrap">'+
+    '<div style="flex:1;min-width:250px"><div style="font-weight:600;margin-bottom:6px">📤 导出（发给另一台机器）</div>'+
+    '<select multiple class="multisel" id="expUsers">'+(o.users||[]).map(u=>'<option value="'+esc(u.user_id)+'">'+esc(u.screen_name)+' ('+esc(u.user_id)+')</option>').join("")+'</select> '+
+    '<select multiple class="multisel" id="expCols">'+(o.collections||[]).map(c=>'<option value="'+esc(c.key)+'">'+esc(c.name)+'</option>').join("")+'</select>'+
+    '<div style="font-size:11px;color:var(--muted);margin:4px 0">用户/集合可多选（Ctrl/Cmd 点选），留空=全部</div>'+
+    '<button class="btn primary" id="expBtn">导出 zip</button><span id="expRes" style="font-size:12px;color:var(--muted);margin-left:8px"></span>'+
+    '<div id="expList" style="font-size:12px;color:var(--muted);margin-top:6px"></div></div>'+
+    '<div style="flex:1;min-width:250px"><div style="font-weight:600;margin-bottom:6px">📥 导入合并（来自另一台机器）</div>'+
+    '<input type="file" id="impFile" accept=".zip" style="font-size:12px"> '+
+    '<select id="impPolicy" style="padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text)">'+
+      '<option value="integrity">完整性优先</option><option value="freshness">新鲜度优先</option>'+
+      '<option value="source_priority">来源权重</option><option value="keep_both">两版都留</option></select>'+
+    '<button class="btn primary" id="impPrev" style="margin-left:6px">预览合并</button>'+
+    '<pre id="impReport" style="background:#0f1115;color:#9fe3a0;border-radius:8px;padding:8px;font:12px/1.6 Consolas,monospace;margin-top:8px;max-height:220px;overflow:auto;display:none"></pre>'+
+    '<button class="btn danger" id="impConfirm" style="display:none">确认执行合并</button><span id="impMsg" style="font-size:12px;color:var(--muted);margin-left:8px"></span></div>'+
+    '<div style="flex:1;min-width:250px"><div style="font-weight:600;margin-bottom:6px">🏷 源端已删手动标记</div>'+
+    '<textarea class="nidbox" id="flagIds" placeholder="note_id，每行一个（时间线筛选"仅源端已删"可浏览）"></textarea>'+
+    '<div style="margin:4px 0"><label style="font-size:13px"><input type="radio" name="flagSt" value="deleted_on_source" checked> 标记为源端已删</label> '+
+    '<label style="font-size:13px"><input type="radio" name="flagSt" value="ok"> 恢复为正常</label></div>'+
+    '<button class="btn primary" id="flagBtn">应用标记</button><span id="flagMsg" style="font-size:12px;color:var(--muted);margin-left:8px"></span></div>'+
+    '</div></div>';
+  $("#expBtn").onclick=async()=>{
+    const users=[...document.querySelectorAll("#expUsers option:checked")].map(x=>x.value);
+    const cols=[...document.querySelectorAll("#expCols option:checked")].map(x=>x.value);
+    const r=await (await fetch("/api/transfer/export",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({users:users,collections:cols})})).json();
+    if(r.ok){ $("#expRes").textContent="✅ 已生成，见下方下载"; loadExpList(); } else { $("#expRes").textContent=r.msg||"导出失败"; }
+  };
+  loadExpList();
+  $("#impPrev").onclick=async()=>{
+    const f=$("#impFile").files[0]; if(!f){alert("请先选择 zip 包");return;}
+    const fd=new FormData(); fd.append("file",f); fd.append("policy",$("#impPolicy").value);
+    const r=await (await fetch("/api/transfer/import/preview",{method:"POST",body:fd})).json();
+    const rep=$("#impReport"); rep.style.display="block";
+    if(!r.ok){ rep.textContent=r.msg||"预览失败"; return; }
+    rep.textContent=fmtReport(r.report);
+    const btn=$("#impConfirm"); btn.style.display="inline-block";
+    btn.onclick=async()=>{
+      const c2=await (await fetch("/api/transfer/import/confirm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({upload_file:r.upload_file,policy:r.report.policy})})).json();
+      if(c2.ok){ rep.textContent=fmtReport(c2.report)+"\n✅ 已合并写入"; btn.style.display="none"; loadConsole(); }
+      else { rep.textContent=c2.msg||"合并失败"; }
+    };
+  };
+  $("#flagBtn").onclick=async()=>{
+    const ids=$("#flagIds").value.split(/\s+/).filter(Boolean);
+    const st=document.querySelector('input[name="flagSt"]:checked').value;
+    if(!ids.length){alert("请先填写 note_id");return;}
+    const r=await (await fetch("/api/transfer/flag",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({note_ids:ids,status:st})})).json();
+    $("#flagMsg").textContent=r.ok?("✅ 已标记 "+r.marked+" 条（现共 "+r.deleted_count+" 条已删存档）"):(r.msg||"失败");
+  };
+}
+async function loadExpList(){
+  const d=await (await fetch("/api/transfer/uploads")).json();
+  const box=$("#expList");
+  box.innerHTML="最近导出: "+(d.items&&d.items.length?
+    '<a class="btn" style="margin:2px" href="/api/transfer/download/'+esc(d.items[0].name)+'">⬇ '+esc(d.items[0].name)+' ('+d.items[0].size_mb+'MB)</a>':"（暂无）")+
+    '<button class="btn" style="margin:2px" id="clnBtn">清理旧包</button>';
+  const cb=box.querySelector("#clnBtn");
+  if(cb) cb.onclick=async()=>{await fetch("/api/transfer/cleanup",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({keep:5})});loadExpList();};
+}
+function fmtReport(r){
+  const L=(k,v)=>String(k).padEnd(14)+String(v);
+  return [
+    "来源机器: "+(r.source_host||"?"),
+    "策略: "+r.policy+"   dry-run: "+r.dry_run,
+    L("记录总数",r.total), L("新增",r.new), L("重复",r.duplicate),
+    L("  取导入版",r.kept_incoming), L("  保留本地",r.kept_local), L("  两版都留",r.kept_both),
+    L("跳过(无id)",r.skipped_no_id),
+    L("媒体导入",r.media_imported), L("媒体已存在",r.media_skipped), L("新增用户",r.creators_imported),
+  ].join("\n");
+}
+
+
+// ===== 人脉（纯查看） =====
+let socialFilt="all", socialKw="";
+async function loadSocial(){
+  const v=$("#socialInner");
+  const s=await (await fetch("/api/social")).json(); const st=s.stats||{};
+  v.innerHTML =
+    '<div style="display:flex;align-items:center;gap:10px;margin:10px 0"><button class="btn primary" id="syncSocial">🔄 同步关注/粉丝</button><span style="font-size:12px;color:var(--muted)">'+(st.last_sync?'上次同步 '+esc(st.last_sync):'')+'</span></div>'+
+    '<div class="stat-cards">'+
+      '<div class="scard"><div class="n">'+st.following+'</div><div class="l">我关注</div></div>'+
+      '<div class="scard"><div class="n">'+st.follower+'</div><div class="l">我的粉丝</div></div>'+
+      '<div class="scard hl"><div class="n">'+st.mutual+'</div><div class="l">双向关注</div></div>'+
+      '<div class="scard"><div class="n">'+st.tracked+'</div><div class="l">已跟踪</div></div>'+
+    '</div>'+
+    '<div style="margin-bottom:8px"><input id="socialKw" type="text" placeholder="搜索用户…" style="width:100%;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text)"></div>'+
+    '<div class="filtertabs" id="socialFtabs"></div>'+
+    '<div id="socialList"></div>';
+  $("#syncSocial").onclick=async()=>{const r=await (await fetch("/api/tasks/social/start",{method:"POST"})).json(); alert(r.msg||""); setTimeout(loadSocial,3000);};
+  $("#socialKw").value=socialKw;
+  $("#socialKw").oninput=()=>{socialKw=$("#socialKw").value.trim();renderSocialList();};
+  await renderSocialList();
+  // 最近关系变化
+  const chg=await (await fetch("/api/social/changes")).json();
+  if(chg.length){
+    const cbox=document.createElement("div"); cbox.className="task-block";
+    cbox.innerHTML='<h2>🕑 最近关系变化</h2>';
+    const cn={new_following:"➕ 新关注",unfollowed:"➖ 取关",new_follower:"🆕 新粉丝",lost_follower:"↘ 掉粉"};
+    chg.slice(0,12).forEach(c=>cbox.insertAdjacentHTML("beforeend",'<div class="task-row"><span style="flex:1;font-size:13px">'+esc(cn[c.change_type]||c.change_type)+' · '+esc(c.screen_name||c.user_id)+'</span><span style="color:var(--muted);font-size:12px">'+esc(c.detected_at||"")+'</span></div>'));
+    v.appendChild(cbox);
+  }
+}
+async function renderSocialList(){
+  const users=await (await fetch(`/api/social/users?filt=${socialFilt}&keyword=${encodeURIComponent(socialKw)}`)).json();
+  const counts={all:users.length, following:users.filter(u=>u.relation==="following"||u.relation==="mutual").length, follower:users.filter(u=>u.relation==="follower"||u.relation==="mutual").length, mutual:users.filter(u=>u.relation==="mutual").length, tracked:users.filter(u=>u.tracked).length};
+  const ft=$("#socialFtabs");
+  const tabs=[["all","全部",counts.all],["following","我关注",counts.following],["follower","粉丝",counts.follower],["mutual","双向",counts.mutual],["tracked","已跟踪",counts.tracked]];
+  ft.innerHTML=tabs.map(([k,l,n])=>'<span class="f '+(socialFilt===k?"active":"")+'" data-k="'+k+'">'+l+' <b>'+n+'</b></span>').join("");
+  ft.querySelectorAll(".f").forEach(f=>f.onclick=()=>{socialFilt=f.dataset.k;renderSocialList();});
+  const grid=document.createElement("div"); grid.className="usergrid";
+  const order={mutual:0, following:1, follower:2, none:3};
+  users.sort((a,b)=>((order[a.relation]??9)-(order[b.relation]??9)) || (b.tracked-a.tracked));
+  users.slice(0,120).forEach(u=>{
+    const card=document.createElement("div");
+    card.className="ucard"+(u.tracked?" tracked":"");
+    const relB={mutual:'<span class="badge mutual">双向</span>',following:'<span class="badge following">我关注</span>',follower:'<span class="badge follower">粉丝</span>',none:''}[u.relation]||"";
+    card.innerHTML='<img src="'+esc(u.avatar||"")+'" onerror="this.style.visibility=\'hidden\'">'+
+      '<div class="info"><div class="name">'+esc(u.screen_name||"未知")+'</div>'+
+      '<div style="margin:2px 0 6px">'+relB+(u.tracked?'<span class="badge tracked">已跟踪</span>':"")+'</div>'+
+      '<div class="meta">微博 '+u.post_count+' 条</div></div>';
+    card.onclick=()=>showUserProfile(u.user_id,u.screen_name||"");
+    grid.appendChild(card);
+  });
+  const list=$("#socialList");
+  list.innerHTML='';
+  if(!users.length){ list.innerHTML='<div style="color:var(--muted);font-size:13px">暂无用户</div>'; return; }
+  list.appendChild(grid);
+}
+async function showUserProfile(userId,name){
+  const m=$("#modal"); m.innerHTML='<button class="close">✕</button><div style="padding-right:20px">加载中…</div>'; $("#overlay").classList.add("open");
+  m.querySelector(".close").onclick=closeDetail;
+  try{
+    const u=await (await fetch(`/api/social/users/${userId}`)).json();
+    const rel={following:"我关注",follower:"我的粉丝",mutual:"双向关注"}[u.relation]||"";
+    m.innerHTML='<button class="close">✕</button><h3 style="margin:0 0 6px">'+esc(u.screen_name||"未知")+' <span style="font-size:12px;color:var(--muted)">'+esc(userId)+'</span></h3>'+
+      '<div style="font-size:12px;color:var(--muted)">'+esc(u.description||"")+' · '+(u.location?esc(u.location):"")+'</div>'+
+      '<div style="margin:8px 0;font-size:13px">关系：'+(rel||"无")+' · 已抓微博 <b>'+u.post_count+'</b> 条 · 我的收藏里有 ta <b>'+(u.interaction?.favorite||0)+'</b> 条 · 我的赞过里有 ta <b>'+(u.interaction?.liked||0)+'</b> 条</div>'+
+      '<div style="margin-bottom:8px"><button class="btn primary" id="openUserTab">📌 在时间线浏览 ta 的微博</button></div><div id="userPosts" style="max-height:50vh;overflow-y:auto"></div>';
+    m.querySelector("#openUserTab").onclick=()=>{ closeDetail(); cur="user_"+userId; yearFilter=""; offset=0; switchMode("timeline"); loadMeta(); loadPosts(); loadStats(); renderTimeTree(); };
+    m.querySelector(".close").onclick=closeDetail;
+    const d=await (await fetch(`/api/social/users/${userId}/posts?limit=30`)).json();
+    const box=$("#userPosts");
+    if(!(d.posts||[]).length){ box.innerHTML='<div style="color:var(--muted);font-size:13px">还没有抓取 ta 的微博（可在人脉点"⏵ 爬取"）</div>'; return; }
+    box.innerHTML='<div style="color:var(--muted);font-size:12px;margin-bottom:6px">最近 '+d.posts.length+' 条（共 '+d.total+'）</div>';
+    d.posts.forEach(p=>box.appendChild(makePost(p)));
+  }catch(e){ m.innerHTML='<button class="close">✕</button><div>加载失败: '+esc(String(e))+'</div>'; m.querySelector(".close").onclick=closeDetail; }
+}
+
+// ===== 管理台（操作中枢） =====
+async function loadConsole(){
+  const v=$("#consoleInner");
+  v.innerHTML='<h2 style="margin-top:6px">🛠 管理台</h2><div id="conTasks"></div><div id="conAdd"></div><div id="conUsers"></div><div id="conTransfer"></div><div id="conArchive"></div><div id="conHistory"></div><div class="task-block"><h2>📄 任务日志</h2><div class="logbox" id="conLog">（点"日志"查看对应任务进度）</div></div>';
+  await renderConTasks(); await renderConAdd(); await renderConUsers(); await renderConTransfer(); await renderConArchive(); await renderConHistory();
+}
+async function renderConTasks(){
+  const tasks=await (await fetch("/api/tasks")).json();
+  const box=$("#conTasks");
+  // 内容类任务（收藏/赞过/同步/批量）；观测用户单独在下面
+  const content = tasks.filter(t=>["favorite","liked","social","batch_crawl"].includes(t.type));
+  box.innerHTML='<div class="task-block"><h2>🗂 内容抓取任务</h2>'+content.map(t=>{
+    const pct = (t.total>0) ? Math.min(100, Math.round((t.count||0)/t.total*100)) : 0;
+    const label = t.total>0 ? (t.count||0)+'/'+t.total : ((t.count||0)>0?(t.count||0)+' 条':'');
+    return '<div class="task-row"><span class="task-dot '+(t.running?"on":"")+'"></span><span style="flex:1;min-width:110px">'+esc(t.name)+'</span>'+
+      '<div class="progress"><div class="bar'+(pct>=100?" done":"")+'" style="width:'+pct+'%"></div></div>'+
+      '<span style="font-size:12px;color:var(--muted);min-width:70px;text-align:right">'+label+'</span>'+
+      '<button class="btn primary" data-a="start" data-t="'+t.type+'" '+(t.running?"disabled":"")+'>启动</button>'+
+      '<button class="btn danger" data-a="stop" data-t="'+t.type+'" '+(t.running?"":"disabled")+'>停止</button>'+
+      '<button class="btn" data-a="log" data-t="'+t.type+'">日志</button></div>';
+  }).join('')+'</div>';
+  box.querySelectorAll("button").forEach(b=>{ b.onclick=async()=>{const t=b.dataset.t,a=b.dataset.a; if(a==="log"){const d=await (await fetch(`/api/tasks/${t}/log?n=80`)).json();$("#conLog").textContent=parseLog(d.lines);}else{await fetch(`/api/tasks/${t}/${a}`,{method:"POST"});setTimeout(loadConsole,1500);}}; });
+}
+async function renderConAdd(){
+  const box=$("#conAdd");
+  box.innerHTML='<div class="task-block"><h2>➕ 添加观测用户</h2>'+
+    '<div class="filters" style="margin:0"><input id="addInput" type="text" placeholder="粘贴 用户id 或 微博主页链接，如 1401527553 / weibo.com/u/xxx" style="flex:1">'+
+    '<select id="addMode" style="padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text)"><option value="incremental">增量</option><option value="full">全量</option></select>'+
+    '<label style="font-size:13px;color:var(--muted);align-self:center"><input type="checkbox" id="addMedia"> 含图片/视频</label>'+
+    '<button class="btn primary" id="addBtn">加入跟踪</button></div>'+
+    '<div style="margin-top:8px;color:var(--muted);font-size:12px">也可以把全部关注批量设为观测对象：<button class="btn" id="batchTrack" style="margin:0 4px">⚡ 全部关注设为跟踪</button></div></div>';
+  $("#addBtn").onclick=async()=>{const raw=$("#addInput").value.trim();if(!raw)return;const mode=$("#addMode").value;const media=$("#addMedia").checked;const r=await (await fetch("/api/social/users/add",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id_or_url:raw,mode:mode,crawl:true,media:media})})).json();alert((r.msg||"")+(r.ok?"（已开始爬取）":""));setTimeout(loadConsole,3000);};
+  $("#batchTrack").onclick=async()=>{const s=await (await fetch("/api/social")).json();if(!confirm("把全部关注（"+s.stats.following+" 人）设为跟踪（增量）？"))return;const r=await (await fetch("/api/social/batch_track",{method:"POST"})).json();alert(r.msg||"");setTimeout(loadConsole,2000);};
+}
+async function renderConUsers(){
+  const m=await (await fetch("/api/meta")).json();
+  const tracked=await (await fetch("/api/social/users?filt=tracked")).json();
+  const tk=await (await fetch(`/api/social/users/${__TK__}`)).json();
+  const box=$("#conUsers");
+  const rows=[];
+  rows.push({uid:__TK__, name:"tombkeeper", mode:(tk.crawl_mode&&tk.crawl_mode!=="off")?tk.crawl_mode:"incremental", crawled:m.collections.creator.count, total:tk.total_posts||0, isCreator:true});
+  tracked.forEach(u=>rows.push({uid:u.user_id, name:u.screen_name||u.user_id, mode:u.crawl_mode, crawled:u.post_count||0, total:u.total_posts||0, isCreator:false}));
+  box.innerHTML='<div class="task-block"><h2>📌 观测用户（'+rows.length+'）</h2>'+
+    '<div style="margin-bottom:8px;font-size:13px;color:var(--muted)"><label><input type="checkbox" id="globalMedia"> 爬取时下载图片/视频</label></div>'+
+    (rows.length?'<table class="ptable"><thead><tr><th>用户</th><th>模式</th><th>已爬 / 全量</th><th>操作</th></tr></thead><tbody>'+
+    rows.map(u=>'<tr><td>👤 '+esc(u.name)+'</td>'+
+      '<td><select class="tMode" data-uid="'+u.uid+'" data-isc="'+(u.isCreator?1:0)+'" style="padding:4px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--text)"><option value="off"'+(u.mode==="off"?" selected":"")+'>不跟踪</option><option value="incremental"'+(u.mode==="incremental"?" selected":"")+'>增量</option><option value="full"'+(u.mode==="full"?" selected":"")+'>全量</option></select></td>'+
+      '<td>'+(u.crawled+' / '+(u.total?('约'+u.total):'?'))+'</td><td>'+
+      '<button class="btn primary tCrawl" data-uid="'+u.uid+'" data-isc="'+(u.isCreator?1:0)+'">'+(u.isCreator?"更新":"爬取")+'</button> '+
+      '<button class="btn tLog" data-uid="'+u.uid+'" data-isc="'+(u.isCreator?1:0)+'">日志</button>'+
+      (u.isCreator?"":' <button class="btn tUntrack" data-uid="'+u.uid+'">取消</button>')+'</td></tr>').join("")+
+    '</tbody></table>':'<div style="color:var(--muted);font-size:13px">暂无观测用户</div>')+'</div>';
+  box.querySelectorAll(".tMode").forEach(s=>{ s.onchange=async()=>{ if(s.dataset.isc==="1"){ await fetch(`/api/social/users/${s.dataset.uid}/track?tracked=${s.value!=="off"?1:0}&mode=${s.value}`,{method:"POST"}); } else { const mode=s.value,tracked=mode==="off"?0:1; await fetch(`/api/social/users/${s.dataset.uid}/track?tracked=${tracked}&mode=${mode}`,{method:"POST"}); } setTimeout(loadConsole,1000); }; });
+  box.querySelectorAll(".tCrawl").forEach(b=>{ b.onclick=async()=>{ const media=$("#globalMedia").checked?1:0; const modeSel=document.querySelector(`.tMode[data-uid="${b.dataset.uid}"]`); const mode=(modeSel&&modeSel.value&&modeSel.value!=="off")?modeSel.value:"incremental"; let r; if(b.dataset.isc==="1"){ r=await (await fetch(`/api/tasks/creator/start?mode=${mode}`,{method:"POST"})).json(); } else { r=await (await fetch(`/api/social/users/${b.dataset.uid}/crawl?mode=${mode}&media=${media}`,{method:"POST"})).json(); } alert(r.msg||""); setTimeout(loadConsole,1500); }; });
+  box.querySelectorAll(".tLog").forEach(b=>{ b.onclick=async()=>{ const t=b.dataset.isc==="1"?"creator":`track_${b.dataset.uid}`; const d=await (await fetch(`/api/tasks/${t}/log?n=80`)).json(); $("#conLog").textContent=parseLog(d.lines); }; });
+  box.querySelectorAll(".tUntrack").forEach(b=>{ b.onclick=async()=>{ await fetch(`/api/social/users/${b.dataset.uid}/track?tracked=0&mode=off`,{method:"POST"}); loadConsole(); }; });
+}
+async function renderConArchive(){
+  const m=await (await fetch("/api/meta")).json();
+  const names={creator:"tombkeeper 归档",favorite:"我的收藏",liked:"我的赞过"};
+  const box=$("#conArchive");
+  box.innerHTML='<div class="task-block"><h2>📦 离线归档导出</h2>'+
+    '<div style="color:var(--muted);font-size:12px;margin-bottom:8px">把某个集合导出为单个离线 HTML（用于备份/分享，双击即可打开），非核心功能。</div>'+
+    ["creator","favorite","liked"].map(c=>'<div class="task-row"><span style="flex:1">'+names[c]+(m.html[c]?.exists?'（'+m.html[c].mtime+' · '+m.html[c].size_mb+'MB）':'（未生成）')+'</span>'+
+    '<button class="btn primary genBtn" data-c="'+c+'">生成</button><button class="btn" data-o="'+c+'">打开</button></div>').join("")+'</div>';
+  box.querySelectorAll(".genBtn").forEach(b=>{ b.onclick=async()=>{const r=await (await fetch(`/api/regenerate?collection=${b.dataset.c}`,{method:"POST"})).json();alert(r.msg||"");setTimeout(loadConsole,3000);}; });
+  box.querySelectorAll("[data-o]").forEach(b=>{ b.onclick=()=>window.open(`/api/html/${b.dataset.o}`,"_blank"); });
+}
+async function renderConHistory(){
+  const h=await (await fetch("/api/tasks/history")).json();
+  const box=$("#conHistory");
+  const stIcon={done:"✓",failed:"✗",running:"⏳",stopped:"⏹",pending:"·"};
+  box.innerHTML='<div class="task-block"><h2>🕐 运行记录</h2>'+
+    (h.length?'<table class="ptable"><thead><tr><th>任务</th><th>结果</th><th>状态</th><th>时间</th></tr></thead><tbody>'+
+    h.slice(0,20).map(t=>'<tr><td>'+esc(t.name||t.type)+(t.target_user?' <span style="color:var(--muted);font-size:11px">'+esc(t.target_user)+'</span>':"")+'</td>'+
+    '<td style="font-size:12px;color:var(--muted)">'+esc(t.detail||"-")+'</td>'+
+    '<td>'+(stIcon[t.status]||t.status)+'</td>'+
+    '<td style="color:var(--muted);font-size:12px">'+esc((t.started_at||"")+"")+'</td></tr>').join("")+
+    '</tbody></table>':'<div style="color:var(--muted);font-size:12px">暂无记录</div>')+'</div>';
+}
+function parseLog(lines){
+  // 提炼关键进度行，过滤噪声
+  if(!lines) return "（暂无日志）";
+  const keep = lines.filter(l=>/page|累计|完成|开始爬取|no more|reached|导出|条|error|失败|超时|Browser process closed/i.test(l));
+  return keep.slice(-40).join("\n") || lines.slice(-20).join("\n");
+}
+
+// ---- 事件 ----
+let debounce;
+$("#q").addEventListener("input",()=>{clearTimeout(debounce);debounce=setTimeout(()=>{offset=0;loadPosts();},250);});
+$("#searchBtn").onclick=()=>{offset=0;loadPosts();};
+$("#more").onclick=()=>{offset+=pageSize;loadPosts(true);};
+$("#availSel").onchange=()=>{availFilter=$("#availSel").value;offset=0;loadPosts();};
+const tb=$("#themeBtn");
+const saved=localStorage.getItem("wb-theme");
+if(saved) document.documentElement.dataset.theme=saved;
+tb.onclick=()=>{const c=document.documentElement.dataset.theme==="dark"?"":"dark";document.documentElement.dataset.theme=c;localStorage.setItem("wb-theme",c);};
+
+// 启动
+initSidebar();
+loadMeta();
+setInterval(()=>{ if(mode==="timeline") loadMeta(); },8000);
+setInterval(()=>{ if(mode==="console") renderConTasks(); },5000);
+</script>
+</body>
+</html>

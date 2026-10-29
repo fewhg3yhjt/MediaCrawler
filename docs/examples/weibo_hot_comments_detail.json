@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "source": {
+    "type": "detail",
+    "note_ids": ["5358337945502372"]
+  },
+  "collect": {
+    "comments": {
+      "max_count": 100
+    }
+  },
+  "update": {
+    "default": "missing"
+  },
+  "limits": {
+    "max_posts": 1
+  },
+  "output": {
+    "collection": "manual"
+  }
+}

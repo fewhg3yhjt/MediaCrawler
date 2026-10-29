@@ -1,0 +1,137 @@
+# -*- coding: utf-8 -*-
+# Copyright (c) 2025 relakkes@gmail.com
+#
+# This file is part of MediaCrawler project.
+# Repository: https://github.com/NanmiCoder/MediaCrawler/blob/main/media_platform\weibo\collection\ports.py
+# GitHub: https://github.com/NanmiCoder
+# Licensed under NON-COMMERCIAL LEARNING LICENSE 1.1
+#
+# 声明：本代码仅供学习和研究目的使用。使用者应遵守以下原则：
+# 1. 不得用于任何商业用途。
+# 2. 使用时应遵守目标平台的使用条款和robots.txt规则。
+# 3. 不得进行大规模爬取或对平台造成运营干扰。
+# 4. 应合理控制请求频率，避免给目标平台带来不必要的负担。
+# 5. 不得用于任何非法或不当的用途。
+#
+# 详细许可条款请参阅项目根目录下的LICENSE文件。
+# 使用本代码即表示您同意遵守上述原则和LICENSE中的所有条款。
+
+"""Replaceable strategies and infrastructure ports, without global configuration."""
+
+from pathlib import Path
+from typing import AsyncIterator, Protocol
+
+from pydantic import BaseModel
+
+from .models import (
+    CollectionResult, DownloadedAsset, DownloadedFile, MediaAsset, ImageManifest, MediaManifest,
+    ImageOptions, TextOptions, MediaOptions, CommentsOptions, MetricsOptions, PostRef, PostText,
+    LikersOptions, PostMetrics, CommentBatch, LikerBatch, DiscoveryBatch, SourceCheckpoint,
+    ProgressEvent,
+)
+
+
+class PostSource(Protocol):
+    checkpoint_key: str
+
+    async def validate_checkpoint(self, checkpoint: SourceCheckpoint | None) -> None: ...
+    def discover(self, checkpoint: SourceCheckpoint | None = None) -> AsyncIterator[DiscoveryBatch]: ...
+
+
+class CreatorTimelineClient(Protocol):
+    async def get_creator_notes_page(self, creator_id: str, page: int) -> dict: ...
+
+
+class SelfFeedClient(Protocol):
+    async def get_current_user_uid(self) -> str: ...
+    async def get_self_feed_page(self, feed_type: str, uid: str, page: int) -> dict: ...
+
+
+class CommentPageClient(Protocol):
+    async def get_note_comments_page(self, note_id: str, max_id: int, max_id_type: int) -> dict: ...
+
+
+class LikerPageClient(Protocol):
+    async def get_note_likers_page(self, note_id: str, page: int) -> dict: ...
+
+
+class ProgressObserver(Protocol):
+    def __call__(self, event: ProgressEvent) -> None: ...
+
+
+class ImageResolver(Protocol):
+    async def resolve(self, post: PostRef, options: ImageOptions) -> ImageManifest: ...
+
+
+class TextResolver(Protocol):
+    async def resolve(self, post: PostRef, options: TextOptions) -> PostText: ...
+
+
+class MediaResolver(Protocol):
+    async def resolve(self, post: PostRef, options: MediaOptions) -> MediaManifest: ...
+
+
+class CommentsResolver(Protocol):
+    async def resolve(self, post: PostRef, options: CommentsOptions) -> CommentBatch: ...
+
+
+class LikersResolver(Protocol):
+    async def resolve(self, post: PostRef, options: LikersOptions) -> LikerBatch: ...
+
+
+class MetricsResolver(Protocol):
+    async def resolve(self, post: PostRef, options: MetricsOptions, policy: str) -> PostMetrics: ...
+
+
+class LongTextSource(Protocol):
+    async def get_full_text_by_id(self, note_id: str) -> dict: ...
+
+
+class AssetDownloader(Protocol):
+    async def download(self, asset: MediaAsset) -> DownloadedAsset | DownloadedFile: ...
+
+
+class BinaryTransport(Protocol):
+    async def fetch(self, url: str) -> bytes: ...
+
+
+class StreamingBinaryTransport(Protocol):
+    async def fetch_to_file(self, url: str, path: Path, max_bytes: int) -> int: ...
+
+
+class AssetValidator(Protocol):
+    def validate(self, content: bytes) -> DownloadedAsset: ...
+
+
+class FileAssetValidator(Protocol):
+    def validate_file(self, path: Path) -> str: ...
+
+
+class AssetRepository(Protocol):
+    def find(self, scope: str, asset: MediaAsset) -> Path | None: ...
+    def save(self, scope: str, asset: MediaAsset, data: DownloadedAsset | DownloadedFile) -> Path: ...
+
+
+class Collector(Protocol):
+    name: str
+    options_type: type[BaseModel]
+
+    async def collect(
+        self, post: PostRef, options: BaseModel, policy: str,
+    ) -> CollectionResult: ...
+
+
+class TaskRepository(Protocol):
+    def create(self, request_json: str, scope: str, collection: str) -> str: ...
+    def resume(self, task_id: str, request_json: str, scope: str) -> None: ...
+    def discover(self, task_id: str, post: PostRef) -> None: ...
+    def pending(self, task_id: str) -> list[PostRef]: ...
+    def source_checkpoint(self, task_id: str, source_key: str) -> SourceCheckpoint | None: ...
+    def save_source_checkpoint(self, task_id: str, checkpoint: SourceCheckpoint) -> None: ...
+    def completed(self, task_id: str, post: PostRef, capability: str) -> bool: ...
+    def record(
+        self, task_id: str, post: PostRef, capability: str,
+        options_json: str, result: CollectionResult,
+    ) -> None: ...
+    def finish(self, task_id: str, status: str, stop_reason: str) -> None: ...
+    def report(self, task_id: str) -> dict: ...

@@ -179,3 +179,12 @@ agent_zone
 debug_tools
 
 database/*.db
+weibo_web/*.db
+weibo_web/*.db-shm
+weibo_web/*.db-wal
+_cookie*.txt
+_debug_cookie*
+cookies*.pkl
+cookies*.txt
+*_user_data_dir/
+*.log

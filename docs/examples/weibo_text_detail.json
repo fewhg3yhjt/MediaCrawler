@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "source": {
+    "type": "detail",
+    "note_ids": ["4982041758140155"]
+  },
+  "collect": {
+    "text": {
+      "require_full_text": true
+    }
+  },
+  "update": {"default": "missing"}
+}

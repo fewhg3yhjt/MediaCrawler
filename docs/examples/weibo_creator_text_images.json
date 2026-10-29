@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "source": {
+    "type": "creator",
+    "creator_id": "1234567890"
+  },
+  "collect": {
+    "text": {
+      "require_full_text": true
+    },
+    "images": {
+      "download": false,
+      "include_retweeted": false
+    }
+  },
+  "update": {
+    "default": "missing"
+  },
+  "limits": {
+    "max_posts": 100
+  },
+  "output": {
+    "collection": "creator_1234567890"
+  }
+}
