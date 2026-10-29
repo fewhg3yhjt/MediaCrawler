@@ -56,6 +56,10 @@ class CommentsOptions(Contract):
     max_count: int = Field(default=100, gt=0, le=500, strict=True)
 
 
+class LikersOptions(Contract):
+    max_count: int = Field(default=100, gt=0, le=500, strict=True)
+
+
 class MetricsOptions(Contract):
     pass
 
@@ -216,6 +220,22 @@ class CommentBatch:
 
 
 @dataclass(frozen=True)
+class LikerRecord:
+    user_id: str
+    user_name: str
+    rank: int
+
+
+@dataclass(frozen=True)
+class LikerBatch:
+    items: tuple[LikerRecord, ...]
+    pages: int
+    complete: bool
+    stop_reason: Literal["end", "limit_reached"]
+    total_available: int | None = None
+
+
+@dataclass(frozen=True)
 class AssetResult:
     asset: MediaAsset
     status: Literal["succeeded", "failed"]
@@ -230,6 +250,7 @@ class CollectionResult:
     error_code: str | None = None
     content: PostText | None = None
     comment_batch: CommentBatch | None = None
+    liker_batch: LikerBatch | None = None
     metrics: PostMetrics | None = None
 
 

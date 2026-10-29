@@ -186,6 +186,7 @@ class ImageJobController:
         video = []
         audio = []
         comments = []
+        likers = []
         metrics = []
         for result in (job.report or {}).get("results", []):
             if result["capability"] == "images":
@@ -208,6 +209,12 @@ class ImageJobController:
                                  "error_code": result.get("error_code"), "pages": batch["pages"],
                                  "complete": batch["complete"], "stop_reason": batch["stop_reason"],
                                  "items": batch["items"]})
+            elif result["capability"] == "likers" and result.get("liker_batch") is not None:
+                batch = result["liker_batch"]
+                likers.append({"note_id": result["note_id"], "status": result["status"],
+                               "error_code": result.get("error_code"), "pages": batch["pages"],
+                               "complete": batch["complete"], "stop_reason": batch["stop_reason"],
+                               "total_available": batch.get("total_available"), "items": batch["items"]})
             elif result["capability"] == "metrics" and result.get("metrics") is not None:
                 metrics.append({"note_id": result["note_id"], "status": result["status"],
                                 "error_code": result.get("error_code"), **result["metrics"]})
@@ -215,7 +222,7 @@ class ImageJobController:
                 "completed": job.completed, "total": job.total, "error_code": job.error_code,
                 "attempts": job.attempts, "images": images, "texts": texts,
                 "video": video, "audio": audio,
-                "comments": comments, "metrics": metrics,
+                "comments": comments, "likers": likers, "metrics": metrics,
                 "discovered": (job.report or {}).get("discovered"),
                 "source": (job.report or {}).get("source"),
                 "stop_reason": (job.report or {}).get("stop_reason"),

@@ -26,7 +26,7 @@ from pydantic import BaseModel
 from .models import (
     CollectionResult, DownloadedAsset, DownloadedFile, MediaAsset, ImageManifest, MediaManifest,
     ImageOptions, TextOptions, MediaOptions, CommentsOptions, MetricsOptions, PostRef, PostText,
-    PostMetrics, CommentBatch, DiscoveryBatch, SourceCheckpoint,
+    LikersOptions, PostMetrics, CommentBatch, LikerBatch, DiscoveryBatch, SourceCheckpoint,
     ProgressEvent,
 )
 
@@ -51,6 +51,10 @@ class CommentPageClient(Protocol):
     async def get_note_comments_page(self, note_id: str, max_id: int, max_id_type: int) -> dict: ...
 
 
+class LikerPageClient(Protocol):
+    async def get_note_likers_page(self, note_id: str, page: int) -> dict: ...
+
+
 class ProgressObserver(Protocol):
     def __call__(self, event: ProgressEvent) -> None: ...
 
@@ -69,6 +73,10 @@ class MediaResolver(Protocol):
 
 class CommentsResolver(Protocol):
     async def resolve(self, post: PostRef, options: CommentsOptions) -> CommentBatch: ...
+
+
+class LikersResolver(Protocol):
+    async def resolve(self, post: PostRef, options: LikersOptions) -> LikerBatch: ...
 
 
 class MetricsResolver(Protocol):

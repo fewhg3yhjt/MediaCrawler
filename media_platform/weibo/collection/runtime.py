@@ -30,6 +30,7 @@ from .adapters import (
 from .application import CollectionApplication, PostSourceFactory
 from .comments import CommentsCollector, WeiboHotCommentsResolver
 from .images import ImageCollector
+from .likers import LikersCollector, WeiboLikersResolver
 from .login import QrLoginFlow
 from .media import MediaCollector, WeiboMediaResolver
 from .metrics import MetricsCollector, WeiboMetricsResolver
@@ -59,6 +60,7 @@ class WebImageExecutor:
             "video": VideoOptions,
             "audio": AudioOptions,
             CommentsCollector.name: CommentsCollector.options_type,
+            LikersCollector.name: LikersCollector.options_type,
             MetricsCollector.name: MetricsCollector.options_type,
         })
         scope = self.account_scope if job.use_browser else "public"
@@ -102,9 +104,10 @@ class WebImageExecutor:
                 FileAssetRepository(self.workspace / "audio"), scope, AudioOptions, progress,
             )
             comments = CommentsCollector(WeiboHotCommentsResolver(client, gate, observer=progress), progress)
+            likers = LikersCollector(WeiboLikersResolver(client, gate, observer=progress), progress)
             metrics = MetricsCollector(WeiboMetricsResolver(client, gate), progress)
             application = CollectionApplication(
-                CollectionPlanner((collector, text, video, audio, comments, metrics)),
+                CollectionPlanner((collector, text, video, audio, comments, likers, metrics)),
                 TaskRunner(SqliteTaskRepository(self.workspace / "tasks.sqlite3"), scope, progress),
                 PostSourceFactory(self.workspace / "jsonl", client, gate),
                 ImageReportWriter(self.workspace / "reports"),

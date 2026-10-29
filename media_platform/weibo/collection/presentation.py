@@ -68,6 +68,7 @@ class ImageReportWriter:
         text_cards = []
         media_cards = []
         comment_cards = []
+        liker_cards = []
         metrics_cards = []
         for result in report.get("results", []):
             content = result.get("content")
@@ -90,6 +91,20 @@ class ImageReportWriter:
                         f'<article><p>#{item["rank"]} {html.escape(item["user_name"] or "微博用户")} · '
                         f'{html.escape(item["created_at"] or "时间未知")}</p>'
                         f'<p>{html.escape(item["text"])}</p><small>赞 {item["like_count"]}</small></article>'
+                    )
+            if result["capability"] == "likers" and result.get("liker_batch") is not None:
+                batch = result["liker_batch"]
+                total = batch.get("total_available")
+                count_label = f'{len(batch["items"])} / {total}' if total is not None else str(len(batch["items"]))
+                liker_cards.append(
+                    f'<article><h2>微博 {html.escape(result["note_id"])}</h2>'
+                    f'<p>{count_label} 位点赞用户 · {batch["pages"]} 页 · '
+                    f'{"本次分页结束" if batch["complete"] else "达到数量上限"}</p></article>'
+                )
+                for item in batch["items"]:
+                    liker_cards.append(
+                        f'<article><p>#{item["rank"]} {html.escape(item["user_name"] or "微博用户")}</p>'
+                        f'<small>用户 ID：{html.escape(item["user_id"])}</small></article>'
                     )
             if result["capability"] == "metrics" and result.get("metrics") is not None:
                 metrics = result["metrics"]
@@ -147,6 +162,7 @@ class ImageReportWriter:
                     + '</div><h2>图片</h2><div class="grid">' + "".join(cards)
                     + '</div><h2>视频与音频</h2><div class="grid">' + "".join(media_cards)
                     + '</div><h2>互动计数</h2><div class="grid">' + "".join(metrics_cards)
+                    + '</div><h2>点赞用户</h2><div class="grid">' + "".join(liker_cards)
                     + '</div><h2>热评流一级评论</h2><div class="grid">' + "".join(comment_cards) + '</div></html>')
         manifest = folder / "report.json"
         gallery = folder / "index.html"

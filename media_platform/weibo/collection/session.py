@@ -164,6 +164,39 @@ def decode_comments_page(status: int, url: str, payload: dict | None) -> dict:
     return {"items": data["data"], "max_id": max_id, "max_id_type": max_id_type}
 
 
+def decode_likers_page(status: int, url: str, payload: dict | None) -> dict:
+    host = urlsplit(url).hostname or ""
+    if 300 <= status < 400:
+        raise CollectionError("login_required")
+    if status == 401 or host not in ("m.weibo.cn", "www.weibo.cn"):
+        raise CollectionError("login_required")
+    if status == 403:
+        raise CollectionError("access_restricted")
+    if status != 200:
+        raise CollectionError("likers_request_failed")
+    if not isinstance(payload, dict):
+        raise CollectionError("login_required")
+    if payload.get("ok") != 1:
+        message = str(payload.get("msg") or payload.get("message") or "").lower()
+        if any(token in message for token in ("login", "登录", "passport", "cookie")):
+            raise CollectionError("login_required")
+        raise CollectionError("access_restricted")
+    data = payload.get("data")
+    if not isinstance(data, dict) or not isinstance(data.get("attitudes"), list):
+        raise CollectionError("invalid_likers_page")
+    total = data.get("total_number")
+    if total is not None:
+        try:
+            total = int(total)
+        except (TypeError, ValueError) as exc:
+            raise CollectionError("invalid_likers_page") from exc
+        if total < 0:
+            raise CollectionError("invalid_likers_page")
+        if total == 0 and data["attitudes"]:
+            raise CollectionError("invalid_likers_page")
+    return {"items": data["attitudes"], "total": total}
+
+
 def decode_current_user(status: int, url: str, payload: dict | None) -> str:
     host = urlsplit(url).hostname or ""
     if 300 <= status < 400:
@@ -281,6 +314,20 @@ class HttpWeiboDetailClient:
         except ValueError:
             payload = None
         return decode_comments_page(response.status_code, str(response.url), payload)
+
+    async def get_note_likers_page(self, note_id: str, page: int) -> dict:
+        try:
+            response = await self.client.get(
+                "https://m.weibo.cn/api/attitudes/show", params={"id": note_id, "page": page},
+                headers={"Referer": f"https://m.weibo.cn/detail/{note_id}"}, follow_redirects=False,
+            )
+        except httpx.HTTPError as exc:
+            raise CollectionError("likers_request_failed") from exc
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = None
+        return decode_likers_page(response.status_code, str(response.url), payload)
 
     async def get_current_user_uid(self) -> str:
         try:
@@ -420,6 +467,21 @@ class BrowserWeiboDetailClient:
         except ValueError:
             payload = None
         return decode_comments_page(response.status, response.url, payload)
+
+    async def get_note_likers_page(self, note_id: str, page: int) -> dict:
+        try:
+            response = await self.request.get(
+                "https://m.weibo.cn/api/attitudes/show", params={"id": note_id, "page": page},
+                headers={"Referer": f"https://m.weibo.cn/detail/{note_id}"},
+                timeout=30000, max_redirects=0,
+            )
+        except Exception as exc:
+            raise CollectionError("likers_request_failed") from exc
+        try:
+            payload = await response.json()
+        except ValueError:
+            payload = None
+        return decode_likers_page(response.status, response.url, payload)
 
     async def get_current_user_uid(self) -> str:
         try:

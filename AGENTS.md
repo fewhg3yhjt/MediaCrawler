@@ -21,8 +21,8 @@
 ## 当前实现入口与资料
 
 - 新架构：`media_platform/weibo/collection/`。
-- 新采集 CLI：`scripts/collect_weibo.py`，当前注册正文 `text`、图片 `images`、视频 `video`、音频 `audio`、一级评论 `comments` 和互动计数 `metrics` 能力；来源支持指定微博、用户主页、当前账号收藏/赞过和本地 JSONL。账号级来源必须显式选用登录会话。
-- 本地采集任务页面：`scripts/serve_weibo_images.py`（默认 `http://127.0.0.1:8767/`）。页面启动时不访问微博或读取浏览器登录目录；登录态是逐任务显式选择，扫码必须由用户主动点击授权。
+- 新采集 CLI：`scripts/collect_weibo.py`，当前注册正文 `text`、图片 `images`、视频 `video`、音频 `audio`、一级评论 `comments`、点赞用户清单 `likers` 和互动计数 `metrics` 能力；来源支持指定微博、用户主页、当前账号收藏/赞过和本地 JSONL。点赞用户接口尚未在线验证；账号级来源必须显式选用登录会话。
+- 本地采集任务页面：`scripts/serve_weibo_images.py`（默认 `http://127.0.0.1:8767/`）。页面启动时不访问微博或读取浏览器登录目录；能力按任务选择，登录态是逐任务显式选择，扫码必须由用户主动点击授权。
 - 设计文档：[`docs/微博按需采集架构设计.md`](docs/微博按需采集架构设计.md)。
 - 使用与已落地边界：[`docs/微博图片采集样板使用说明.md`](docs/微博图片采集样板使用说明.md)。
 - 请求示例：`docs/examples/weibo_*.json`。
@@ -34,7 +34,7 @@
 ## 验证与交付
 
 - 使用项目虚拟环境执行 Python；Windows 为 `.venv\Scripts\python.exe`。
-- 采集能力针对性验证：`.venv\Scripts\python.exe -m pytest tests/test_weibo_collection.py tests/test_weibo_text_collection.py tests/test_weibo_media_collection.py -q`。
+- 微博采集定向验证：使用固定响应、假客户端和临时目录运行 `tests/test_weibo_collection.py`、`tests/test_weibo_text_collection.py`、`tests/test_weibo_media_collection.py`、`tests/test_weibo_source_checkpoints.py`、`tests/test_weibo_likers.py`、`tests/test_weibo_image_web.py`、`tests/test_weibo_image_link_flow.py` 和 `tests/test_weibo_image_boundaries.py`。
 - 涉及公共入口或导入机制时，补充适当回归；完整测试入口为 `.venv\Scripts\python.exe -m pytest tests -q`。
 - 架构测试重点验证可观察行为：未选择能力没有额外调用、来源复用、正文完整性与详情复用、媒体流式下载及取消清理、补抓不被整帖去重拦截、局部失败独立重试、任务恢复、集合归属、资源校验。
 - CLI 和网页共用 `CollectionApplication`；网页任务/会话生命周期通过 `ImageJobController` 与运行时组合器实现，不在 UI 控制器内重复实现采集逻辑。网页持久化不包含 Cookie、二维码或浏览器 profile 内容。

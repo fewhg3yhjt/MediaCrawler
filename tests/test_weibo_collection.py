@@ -331,7 +331,7 @@ def test_cli_offline_archive_and_invalid_request_have_no_downloads(tmp_path):
     assert report["discovered"] == 1 and report["status"] == "partial"
     assert not (workspace / "images").exists()
     request_file.write_text(json.dumps({"source": {"type": "detail", "note_ids": ["123"]},
-                                        "collect": {"likers": {}}}), encoding="utf-8")
+                                        "collect": {"likers": {"max_count": 501}}}), encoding="utf-8")
     rejected_work = tmp_path / "rejected"
     command[command.index("--workspace") + 1] = str(rejected_work)
     rejected = subprocess.run(command, cwd=root, capture_output=True, timeout=30)

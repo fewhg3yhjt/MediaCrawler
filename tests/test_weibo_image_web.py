@@ -28,7 +28,9 @@ from dataclasses import asdict
 import httpx
 from PIL import Image
 
-from media_platform.weibo.collection.models import CollectionError, MediaAsset, DownloadedAsset, ProgressEvent
+from media_platform.weibo.collection.models import (
+    CollectionError, DownloadedAsset, LikerBatch, LikerRecord, MediaAsset, ProgressEvent,
+)
 from media_platform.weibo.collection.repository import FileAssetRepository
 from media_platform.weibo.collection.web_app import create_image_app
 from media_platform.weibo.collection.web_jobs import ImageJobController, ImageWebJob, WebJobRepository
@@ -73,6 +75,12 @@ class Executor:
             progress(ProgressEvent("text", completed=1, total=1))
             results.append({"note_id": "123", "capability": "text", "status": "succeeded",
                             "error_code": None, "content": asdict(PostText("123", "sample body", "sample body", True))})
+        if "likers" in job.request["collect"]:
+            progress(ProgressEvent("likers", capability="likers", completed=1, total=1))
+            results.append({"note_id": "123", "capability": "likers", "status": "succeeded",
+                            "error_code": None, "liker_batch": asdict(LikerBatch(
+                                (LikerRecord("42", "sample liker", 1),), 1, True, "end", 1,
+                            ))})
         for kind, content, extension in (("video", b"\x00\x00\x00\x18ftypmp42video", "mp4"),
                                          ("audio", b"ID3sample-audio", "mp3")):
             if kind in job.request["collect"]:
@@ -180,6 +188,30 @@ def test_text_only_job_selects_only_text_and_returns_body(tmp_path):
                                         "text": "sample body", "complete": True}]
             assert not (tmp_path / "images").exists()
             assert executor.calls == [(False, False, None)]
+
+    asyncio.run(execute())
+
+
+def test_likers_only_job_returns_users_without_enabling_other_capabilities(tmp_path):
+    async def execute():
+        async with environment(tmp_path) as (client, controller, _, headers):
+            home = await client.get("/")
+            assert 'id="collectLikers"' in home.text
+            response = await client.post("/api/jobs", headers=headers, json={
+                "url": "123", "include_images": False, "include_likers": True, "max_likers": 10,
+            })
+            assert response.status_code == 202
+            job_id = response.json()["id"]
+            await wait(controller)
+            state = controller.snapshot(job_id)
+            assert state["capabilities"] == ["likers"]
+            assert state["likers"] == [{
+                "note_id": "123", "status": "succeeded", "error_code": None, "pages": 1,
+                "complete": True, "stop_reason": "end", "total_available": 1,
+                "items": [{"user_id": "42", "user_name": "sample liker", "rank": 1}],
+            }]
+            assert state["comments"] == [] and state["metrics"] == []
+            assert not (tmp_path / "images").exists()
 
     asyncio.run(execute())
 

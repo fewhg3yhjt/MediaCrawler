@@ -106,6 +106,21 @@ class CachedDetailClient:
                 raise
         return self._responses[key]
 
+    async def get_note_likers_page(self, note_id: str, page: int) -> dict:
+        method = getattr(self.client, "get_note_likers_page", None)
+        if method is None:
+            raise CollectionError("likers_request_failed")
+        key = f"likers:{note_id}:{page}"
+        if key in self._failures:
+            raise self._failures[key]
+        if key not in self._responses:
+            try:
+                self._responses[key] = await method(note_id, page)
+            except Exception as exc:
+                self._failures[key] = exc
+                raise
+        return self._responses[key]
+
     async def get_current_user_uid(self) -> str:
         method = getattr(self.client, "get_current_user_uid", None)
         if method is None:
