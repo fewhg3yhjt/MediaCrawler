@@ -1,0 +1,12 @@
+{
+  "source": {
+    "type": "detail",
+    "note_ids": ["<微博链接或ID>"]
+  },
+  "collect": {
+    "metrics": {}
+  },
+  "update": {
+    "default": "missing"
+  }
+}

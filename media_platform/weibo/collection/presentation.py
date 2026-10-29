@@ -68,6 +68,7 @@ class ImageReportWriter:
         text_cards = []
         media_cards = []
         comment_cards = []
+        metrics_cards = []
         for result in report.get("results", []):
             content = result.get("content")
             if result["capability"] == "text" and content is not None:
@@ -90,6 +91,16 @@ class ImageReportWriter:
                         f'{html.escape(item["created_at"] or "时间未知")}</p>'
                         f'<p>{html.escape(item["text"])}</p><small>赞 {item["like_count"]}</small></article>'
                     )
+            if result["capability"] == "metrics" and result.get("metrics") is not None:
+                metrics = result["metrics"]
+                metrics_cards.append(
+                    f'<article><h2>微博 {html.escape(result["note_id"])}</h2>'
+                    f'<p>赞 {metrics["like_count"] if metrics["like_count"] is not None else "未知"} · '
+                    f'评论 {metrics["comment_count"] if metrics["comment_count"] is not None else "未知"} · '
+                    f'转发 {metrics["repost_count"] if metrics["repost_count"] is not None else "未知"}</p>'
+                    f'<p>{"计数完整" if metrics["complete"] else "计数不完整"} · '
+                    f'{html.escape(metrics.get("observed_at") or "采集时间未知")}</p></article>'
+                )
             if result["capability"] != "images":
                 if result["capability"] in ("video", "audio"):
                     for item in result.get("assets", []):
@@ -135,6 +146,7 @@ class ImageReportWriter:
                     + "".join(errors) + '<h2>正文</h2><div class="grid">' + "".join(text_cards)
                     + '</div><h2>图片</h2><div class="grid">' + "".join(cards)
                     + '</div><h2>视频与音频</h2><div class="grid">' + "".join(media_cards)
+                    + '</div><h2>互动计数</h2><div class="grid">' + "".join(metrics_cards)
                     + '</div><h2>热评流一级评论</h2><div class="grid">' + "".join(comment_cards) + '</div></html>')
         manifest = folder / "report.json"
         gallery = folder / "index.html"

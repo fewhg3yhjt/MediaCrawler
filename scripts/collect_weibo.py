@@ -16,7 +16,7 @@
 # 详细许可条款请参阅项目根目录下的LICENSE文件。
 # 使用本代码即表示您同意遵守上述原则和LICENSE中的所有条款。
 
-"""Composition root for the new collection architecture (image pilot)."""
+"""Composition root for the new Weibo collection architecture."""
 
 import argparse
 import asyncio
@@ -39,6 +39,7 @@ from media_platform.weibo.collection.text import TextCollector, WeiboTextResolve
 from media_platform.weibo.collection.media import MediaCollector, WeiboMediaResolver
 from media_platform.weibo.collection.application import CollectionApplication, PostSourceFactory
 from media_platform.weibo.collection.comments import CommentsCollector, WeiboHotCommentsResolver
+from media_platform.weibo.collection.metrics import MetricsCollector, WeiboMetricsResolver
 from media_platform.weibo.collection.models import AudioOptions, CrawlRequest, TaskExecutionError, VideoOptions
 from media_platform.weibo.collection.repository import FileAssetRepository, SqliteTaskRepository
 from media_platform.weibo.collection.service import CollectionPlanner, TaskRunner, validate_capabilities
@@ -61,6 +62,7 @@ async def execute(args):
         "video": VideoOptions,
         "audio": AudioOptions,
         CommentsCollector.name: CommentsCollector.options_type,
+        MetricsCollector.name: MetricsCollector.options_type,
     }
     validate_capabilities(request, supported)
     cookies = args.cookie_file.read_text(encoding="utf-8").strip() if args.cookie_file else ""
@@ -95,11 +97,12 @@ async def execute(args):
             FileAssetRepository(args.workspace / "audio"), args.account_scope, AudioOptions,
         )
         comments = CommentsCollector(WeiboHotCommentsResolver(client, gate))
+        metrics = MetricsCollector(WeiboMetricsResolver(client, gate))
         # Registration is the only capability support table. Repositories are
         # lazy, so planning still precedes any output files or network requests.
         repository = SqliteTaskRepository(args.workspace / "tasks.sqlite3")
         application = CollectionApplication(
-            CollectionPlanner((images, text, video, audio, comments)), TaskRunner(repository, args.account_scope),
+            CollectionPlanner((images, text, video, audio, comments, metrics)), TaskRunner(repository, args.account_scope),
             PostSourceFactory(args.archive_dir, client, gate), ImageReportWriter(args.workspace / "reports"),
         )
         report = await application.execute(request, args.resume_task)
@@ -110,7 +113,7 @@ async def execute(args):
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
-    parser = argparse.ArgumentParser(description="微博按需采集：用户主页、正文、图片、视频与音频能力")
+    parser = argparse.ArgumentParser(description="微博按需采集：用户主页、正文、媒体、评论与互动计数能力")
     inputs = parser.add_mutually_exclusive_group(required=True)
     inputs.add_argument("--request-file", type=Path)
     inputs.add_argument("--url", help="单条微博链接或微博 ID，默认下载图片")

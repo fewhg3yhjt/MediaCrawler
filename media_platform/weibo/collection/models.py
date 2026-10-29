@@ -56,6 +56,10 @@ class CommentsOptions(Contract):
     max_count: int = Field(default=100, gt=0, le=500, strict=True)
 
 
+class MetricsOptions(Contract):
+    pass
+
+
 class DetailSpec(Contract):
     type: Literal["detail"]
     note_ids: tuple[str, ...] = Field(min_length=1)
@@ -151,6 +155,7 @@ class PostRef:
     note_id: str
     images: ImageManifest | None = None
     text: "PostText | None" = None
+    metrics: "PostMetrics | None" = None
 
 
 @dataclass(frozen=True)
@@ -160,6 +165,15 @@ class PostText:
     raw_text: str
     complete: bool
     error_code: str | None = None
+
+
+@dataclass(frozen=True)
+class PostMetrics:
+    like_count: int | None
+    comment_count: int | None
+    repost_count: int | None
+    observed_at: str | None
+    complete: bool
 
 
 @dataclass(frozen=True)
@@ -196,6 +210,7 @@ class CollectionResult:
     error_code: str | None = None
     content: PostText | None = None
     comment_batch: CommentBatch | None = None
+    metrics: PostMetrics | None = None
 
 
 @dataclass(frozen=True)

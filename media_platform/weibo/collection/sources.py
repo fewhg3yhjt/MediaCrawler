@@ -21,7 +21,9 @@
 import json
 from pathlib import Path
 from typing import AsyncIterator
+from datetime import datetime, timezone
 
+from .metrics import metrics_from_status
 from .models import CollectionError, MediaAsset, ImageManifest, PostRef, PostText
 
 
@@ -79,7 +81,9 @@ def post_ref_from_status(raw: dict) -> PostRef:
     if not note_id.isascii() or not note_id.isdigit() or int(note_id) <= 0:
         raise CollectionError("invalid_post_snapshot")
     try:
-        return PostRef(note_id, image_manifest(note_id, raw), _text_snapshot(note_id, raw))
+        observed_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        return PostRef(note_id, image_manifest(note_id, raw), _text_snapshot(note_id, raw),
+                       metrics_from_status(raw, observed_at))
     except CollectionError:
         raise
     except (ValueError, TypeError, AttributeError) as exc:
@@ -310,4 +314,5 @@ class ArchiveSource:
                 if not isinstance(raw_text, str):
                     raw_text = body
                 text = PostText(note_id, body, raw_text, record.get("text_complete") is True)
-            yield PostRef(note_id, ImageManifest(tuple(assets), False, False), text)
+            yield PostRef(note_id, ImageManifest(tuple(assets), False, False), text,
+                          metrics_from_status(record))

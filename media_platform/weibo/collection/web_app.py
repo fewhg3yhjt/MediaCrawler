@@ -46,6 +46,7 @@ class SubmitImageJob(Contract):
     include_video: StrictBool = False
     include_audio: StrictBool = False
     include_comments: StrictBool = False
+    include_metrics: StrictBool = False
     max_comments: StrictInt = Field(default=100, gt=0, le=500)
     include_retweeted: StrictBool = False
     use_browser_session: StrictBool = False
@@ -58,7 +59,7 @@ class SubmitImageJob(Contract):
             WeiboCreatorLink.parse(self.url)
         elif not self.use_browser_session:
             raise ValueError("self_feed_requires_login")
-        if not (self.include_images or self.include_text or self.include_video or self.include_audio or self.include_comments):
+        if not (self.include_images or self.include_text or self.include_video or self.include_audio or self.include_comments or self.include_metrics):
             raise ValueError("select_at_least_one_capability")
         return self
 
@@ -125,6 +126,8 @@ def create_image_app(controller: ImageJobController, workspace: Path) -> FastAPI
             collect["audio"] = {"include_retweeted": body.include_retweeted}
         if body.include_comments:
             collect["comments"] = {"max_count": body.max_comments}
+        if body.include_metrics:
+            collect["metrics"] = {}
         if body.source_type == "creator":
             source = {"type": "creator", "creator_id": body.url}
             source_label = body.url

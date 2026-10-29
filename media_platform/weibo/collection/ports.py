@@ -25,7 +25,8 @@ from pydantic import BaseModel
 
 from .models import (
     CollectionResult, DownloadedAsset, DownloadedFile, MediaAsset, ImageManifest, MediaManifest,
-    ImageOptions, TextOptions, MediaOptions, CommentsOptions, PostRef, PostText, CommentBatch,
+    ImageOptions, TextOptions, MediaOptions, CommentsOptions, MetricsOptions, PostRef, PostText,
+    PostMetrics, CommentBatch,
     ProgressEvent,
 )
 
@@ -65,6 +66,10 @@ class MediaResolver(Protocol):
 
 class CommentsResolver(Protocol):
     async def resolve(self, post: PostRef, options: CommentsOptions) -> CommentBatch: ...
+
+
+class MetricsResolver(Protocol):
+    async def resolve(self, post: PostRef, options: MetricsOptions, policy: str) -> PostMetrics: ...
 
 
 class LongTextSource(Protocol):

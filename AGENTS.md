@@ -21,7 +21,7 @@
 ## 当前实现入口与资料
 
 - 新架构：`media_platform/weibo/collection/`。
-- 新采集 CLI：`scripts/collect_weibo.py`，当前注册正文 `text`、图片 `images`、视频 `video`、音频 `audio` 和一级评论 `comments` 能力；来源支持指定微博、用户主页、当前账号收藏/赞过和本地 JSONL。账号级来源必须显式选用登录会话。
+- 新采集 CLI：`scripts/collect_weibo.py`，当前注册正文 `text`、图片 `images`、视频 `video`、音频 `audio`、一级评论 `comments` 和互动计数 `metrics` 能力；来源支持指定微博、用户主页、当前账号收藏/赞过和本地 JSONL。账号级来源必须显式选用登录会话。
 - 本地采集任务页面：`scripts/serve_weibo_images.py`（默认 `http://127.0.0.1:8767/`）。页面启动时不访问微博或读取浏览器登录目录；登录态是逐任务显式选择，扫码必须由用户主动点击授权。
 - 设计文档：[`docs/微博按需采集架构设计.md`](docs/微博按需采集架构设计.md)。
 - 使用与已落地边界：[`docs/微博图片采集样板使用说明.md`](docs/微博图片采集样板使用说明.md)。

@@ -30,7 +30,8 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from .models import (
-    CollectionError, CollectionResult, DownloadedAsset, DownloadedFile, MediaAsset, ImageManifest, PostRef, PostText,
+    CollectionError, CollectionResult, DownloadedAsset, DownloadedFile, MediaAsset, ImageManifest, PostRef,
+    PostMetrics, PostText,
 )
 
 
@@ -108,7 +109,10 @@ class SqliteTaskRepository:
             text = item.get("text")
             if text is not None:
                 text = PostText(**text)
-            posts.append(PostRef(item["note_id"], manifest, text))
+            metrics = item.get("metrics")
+            if metrics is not None:
+                metrics = PostMetrics(**metrics)
+            posts.append(PostRef(item["note_id"], manifest, text, metrics))
         return posts
 
     def completed(self, task_id: str, post: PostRef, capability: str) -> bool:
